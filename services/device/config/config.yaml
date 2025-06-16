@@ -1,0 +1,67 @@
+# Device Service Configuration
+
+# Server configuration
+server:
+  port: 8091
+  mode: debug # Options: debug, release, test
+  timeout: 30s
+  cors_enabled: true
+  cors_origins: ["*"]
+
+# Database configuration
+database:
+  host: postgres
+  port: 5432
+  user: postgres
+  password: postgres
+  name: device
+  sslmode: disable
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+
+# Redis configuration
+redis:
+  host: redis
+  port: 6379
+  password: "" # Empty for no password
+  db: 0
+  enabled: true
+
+# Azure Service Bus configuration
+service_bus:
+  connection_string: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
+  queue_name: "device-events"
+
+# New Relic monitoring configuration
+new_relic:
+  app_name: "Device Service"
+  license_key: ""
+  enabled: false
+  log_level: "info"
+  distributed_tracing_enabled: true
+
+# Firmware release management configuration
+firmware:
+  storage_path: "./firmware"
+  keys_path: "./keys"
+  signing_algorithm: "secp256r1"
+  public_key_file: "ecdsa-public.pem"
+  private_key_file: "ecdsa-private.pem"
+  verify_signatures: true
+  require_signatures: false # Only require in production
+
+# OTA update system configuration
+ota:
+  chunk_size: 8192 # 8KB chunks
+  max_concurrent_updates: 100
+  download_timeout: 3600 # 1 hour
+  max_retries: 3
+  session_lifetime: 86400 # 24 hours
+  delta_updates: false
+  default_update_type: "full"
+
+# Logging configuration
+logging:
+  level: "info" # debug, info, warn, error
+  format: "json" # json, text

@@ -1,0 +1,26 @@
+# Sales service air configuration
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/app ."
+bin = "tmp/app"
+args_bin = ["api"]  # Default to the API server based on cmd/api.go
+include_dir = [".", "../../pkg"]
+exclude_dir = ["tmp", "vendor"]
+include_ext = ["go", "mod", "sum"]
+exclude_regex = ["_test\\.go"]
+exclude_unchanged = true
+stop_on_error = true
+
+[log]
+time = true
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true

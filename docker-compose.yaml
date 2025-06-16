@@ -1,0 +1,159 @@
+services:
+  canister:
+    build:
+      context: .
+      dockerfile: services/canister/Dockerfile
+      target: dev
+    volumes:
+      - .:/app
+      - canister-tmp:/app/services/canister/tmp
+      - ./services/canister/config:/app/config
+    ports:
+      - "8080:8080"
+    environment:
+      - CANISTER_DATABASE_SOURCE=postgresql://postgres:postgres@postgres:5432/canister?sslmode=disable
+      - CANISTER_ELASTICSEARCH_URL=https://novek-es.es.westeurope.azure.elastic-cloud.com:9243
+      - CANISTER_ELASTICSEARCH_USERNAME=staging
+      - CANISTER_ELASTICSEARCH_PASSWORD=stagestage#
+      - CANISTER_ELASTICSEARCH_PREFIX=staging-prod
+      - CANISTER_AZURE_QUEUE_CONN_STR=Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8=
+      - CANISTER_AZURE_MESSAGES_CONF_QUEUE_NAME=canister-configurations
+      - CANISTER_AZURE_MESSAGES_EVENTS_QUEUE_NAME=canister-events
+    depends_on:
+      - postgres
+    networks:
+      - backstage-network
+
+  device:
+    build:
+      context: .
+      dockerfile: services/device/Dockerfile
+      target: dev
+    volumes:
+      - .:/app
+      - device-tmp:/app/services/device/tmp
+      - ./services/device/config:/app/config
+    ports:
+      - "8091:8091"
+    environment:
+      - DEVICE_DATABASE_HOST=postgres
+      - DEVICE_DATABASE_PORT=5432
+      - DEVICE_DATABASE_USER=postgres
+      - DEVICE_DATABASE_PASSWORD=postgres
+      - DEVICE_DATABASE_NAME=device
+      - DEVICE_SERVICE_BUS_CONNECTION_STRING=Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8=
+      - DEVICE_SERVICE_BUS_QUEUE_NAME=device-events
+    depends_on:
+      - postgres
+    networks:
+      - backstage-network
+
+  sales:
+    build:
+      context: .
+      dockerfile: services/sales/Dockerfile
+      target: dev
+    volumes:
+      - .:/app
+      - sales-tmp:/app/services/sales/tmp
+      - ./services/sales/config:/app/config
+    ports:
+      - "8081:8080"  # Mapped to different host port to avoid conflict with canister
+    environment:
+      - SALES_ENVIRONMENT=development
+      - SALES_DATABASE_DSN=postgresql://postgres:postgres@postgres:5432/sales?sslmode=disable
+      - SALES_DATABASE_READ_ONLY_DSN=postgresql://postgres:postgres@postgres:5432/sales_readonly?sslmode=disable
+      - SALES_REDIS_HOST=redis
+      - SALES_ELASTIC_URL=https://novek-es.es.westeurope.azure.elastic-cloud.com:9243
+      - SALES_ELASTIC_USERNAME=staging
+      - SALES_ELASTIC_PASSWORD=stagestage#
+      - SALES_ELASTIC_PREFIX=staging-prod
+      - SALES_AZURE_QUEUE_CONN_STR=Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8=
+      - SALES_AZURE_QUEUE_NAME=sales-events
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - backstage-network
+
+  truck:
+    build:
+      context: .
+      dockerfile: services/truck/Dockerfile
+      target: dev
+    volumes:
+      - .:/app
+      - truck-tmp:/app/services/truck/tmp
+      - ./services/truck/config:/app/config
+    ports:
+      - "8000:8000"
+    environment:
+      - OPS_DATABASE_HOST=postgres
+      - OPS_DATABASE_PORT=5432
+      - OPS_DATABASE_USER=postgres
+      - OPS_DATABASE_PASSWORD=postgres
+      - OPS_DATABASE_NAME=truck
+      - OPS_REDIS_HOST=redis
+      - OPS_MESSAGE_BUS_CONNECTION_STRING=Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8=
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - backstage-network
+
+  # Dependencies
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_MULTIPLE_DATABASES=canister,device,sales,sales_readonly,truck
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-multiple-postgres-databases.sh:/docker-entrypoint-initdb.d/init-multiple-postgres-databases.sh
+    networks:
+      - backstage-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Changed from 6379:6379 to avoid port conflict
+    volumes:
+      - redis-data:/data
+    networks:
+      - backstage-network
+
+  # Development Tools
+  adminer:
+    image: adminer
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgres
+    networks:
+      - backstage-network
+
+  redis-commander:
+    image: rediscommander/redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8083:8081"
+    depends_on:
+      - redis
+    networks:
+      - backstage-network
+
+networks:
+  backstage-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  canister-tmp:
+  device-tmp:
+  sales-tmp:
+  truck-tmp:

@@ -1,0 +1,9 @@
+go 1.24.1
+
+use (
+	./pkg
+	./services/canister
+	./services/device
+	./services/sales
+	./services/truck
+)

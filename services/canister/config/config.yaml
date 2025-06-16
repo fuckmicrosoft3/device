@@ -1,0 +1,39 @@
+# Canister Service Configuration
+
+# Database configuration
+database:
+  driver: "postgres"
+  source: "postgresql://postgres:postgres@postgres:5432/canister?sslmode=disable"
+
+# HTTP server configuration
+server:
+  address: "0.0.0.0:8080"
+  timeout: 30s
+  cors_enabled: true
+  cors_origins: ["*"]
+
+# Elasticsearch configuration
+elasticsearch:
+  url: "https://novek-es.es.westeurope.azure.elastic-cloud.com:9243"
+  username: "staging"
+  password: "stagestage#"
+  prefix: "staging-prod"
+
+# Azure Service Bus configuration
+azure:
+  queue_conn_str: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
+  messages_conf_queue_name: "canister-configurations"
+  messages_events_queue_name: "canister-events"
+
+# IAM configuration
+iam:
+  server_address: "http://iam:8070"
+
+# Other configuration
+snapshot_frequency: 100
+enable_migrations: true
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json" # json, text

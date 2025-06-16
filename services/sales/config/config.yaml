@@ -1,0 +1,57 @@
+# Sales Service Configuration
+
+# Environment (development, staging, production)
+environment: "development"
+
+# HTTP server configuration
+server:
+  address: "0.0.0.0:8080"
+  timeout: 30s
+  cors_enabled: true
+  cors_origins: ["*"]
+
+# Database configuration
+database:
+  dsn: "postgresql://postgres:postgres@postgres:5432/sales?sslmode=disable"
+  read_only_dsn: "postgresql://postgres:postgres@postgres:5432/sales_readonly?sslmode=disable"
+  name: "sales"
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: "1h"
+
+# Redis configuration
+redis:
+  host: "redis"
+  port: 6379
+  password: ""
+  db: 0
+  enabled: true
+
+# Azure Service Bus configuration
+azure:
+  queue_conn_str: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
+  queue_name: "sales-events"
+
+# Elasticsearch configuration
+elastic:
+  url: "https://novek-es.es.westeurope.azure.elastic-cloud.com:9243"
+  username: "staging"
+  password: "stagestage#"
+  prefix: "staging-prod"
+  index: "sales"
+
+# Tracing configuration (New Relic)
+tracing:
+  license_key: ""
+  app_name: "Sales Service"
+  log_level: "info"
+  log_enabled: true
+  distributed_tracing_enabled: true
+
+# Metrics
+metrics_enabled: true
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json" # json, text

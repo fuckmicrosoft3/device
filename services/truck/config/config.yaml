@@ -1,0 +1,51 @@
+# Truck Operations Service Configuration
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  read_timeout: "1m"
+  write_timeout: "1m"
+  shutdown_timeout: "10s"
+  cors_white_list:
+    - "*"
+
+# Database configuration
+database:
+  host: "postgres"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  name: "truck"
+  ssl_mode: "disable"
+  debug: false
+  max_conn: 100
+  max_idle: 10
+  max_life: "5m"
+
+# Message Bus configuration
+message_bus:
+  connection_string: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
+  prefix: "staging-prod"
+  queues:
+    - "erp-operations"
+    - "truck-events"
+  erp_queue: "erp-messages-operations"
+
+# Redis configuration
+redis:
+  host: "redis"
+  port: 6379
+  password: ""
+  db: 1
+  enabled: true
+
+# Logging configuration
+logging:
+  level: "info"
+  json: false
+
+# API Versioning
+api:
+  version: "v1"
+  prefix: "/api"
