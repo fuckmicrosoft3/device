@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # The application service (for development)
+  app:
+    build:
+      context: .
+      target: dev # Use the 'dev' stage from the Dockerfile
+    container_name: device_service_dev
+    ports:
+      - "8080:8080" # Map host port to container port
+    volumes:
+      - .:/app # Mount the current directory into the container for live-reloading
+    depends_on:
+      - db
+      - redis
+    environment:
+      # Override config values for the Docker environment
+      - DEVICE_DATABASE__DSN=host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable
+      - DEVICE_REDIS__ADDR=redis:6379
+
+  # PostgreSQL database service
+  db:
+    image: postgres:14-alpine
+    container_name: device_db
+    ports:
+      - "5433:5432" # Expose the DB port to the host for local debugging
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist database data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=device_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d device_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis service
+  redis:
+    image: redis:6-alpine
+    container_name: device_redis
+    ports:
+      - "6380:6379" # Expose Redis port to the host
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:

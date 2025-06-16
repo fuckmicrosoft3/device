@@ -1,67 +1,33 @@
-# Device Service Configuration
-
-# Server configuration
+# Default configuration for the device service.
+# These values can be overridden by environment variables (e.g., DEVICE_SERVER__PORT=9000).
 server:
-  port: 8091
-  mode: debug # Options: debug, release, test
-  timeout: 30s
-  cors_enabled: true
-  cors_origins: ["*"]
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 15s
 
-# Database configuration
 database:
-  host: postgres
-  port: 5432
-  user: postgres
-  password: postgres
-  name: device
-  sslmode: disable
-  max_open_conns: 50
+  dsn: "host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable"
+  max_open_conns: 25
   max_idle_conns: 10
-  conn_max_lifetime: 1h
+  conn_max_lifetime: 5m
 
-# Redis configuration
 redis:
-  host: redis
-  port: 6379
-  password: "" # Empty for no password
+  addr: "redis:6379"
+  password: ""
   db: 0
-  enabled: true
 
-# Azure Service Bus configuration
 service_bus:
-  connection_string: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
-  queue_name: "device-events"
+  connection_string: "" # Add your Azure Service Bus connection string here
+  queue_name: "device-messages"
 
-# New Relic monitoring configuration
-new_relic:
-  app_name: "Device Service"
-  license_key: ""
-  enabled: false
-  log_level: "info"
-  distributed_tracing_enabled: true
-
-# Firmware release management configuration
 firmware:
-  storage_path: "./firmware"
-  keys_path: "./keys"
-  signing_algorithm: "secp256r1"
-  public_key_file: "ecdsa-public.pem"
-  private_key_file: "ecdsa-private.pem"
-  verify_signatures: true
-  require_signatures: false # Only require in production
+  storage_path: "/data/firmware"
+  max_file_size: 10485760 # 10MB
+  signing_enabled: false
+  private_key_path: "" # e.g., /keys/private.pem
 
-# OTA update system configuration
 ota:
-  chunk_size: 8192 # 8KB chunks
-  max_concurrent_updates: 100
-  download_timeout: 3600 # 1 hour
-  max_retries: 3
-  session_lifetime: 86400 # 24 hours
-  delta_updates: false
-  default_update_type: "full"
-
-# Logging configuration
-logging:
-  level: "info" # debug, info, warn, error
-  format: "json" # json, text
+  chunk_size: 32768 # 32KB
+  max_concurrent_updates: 50
+  download_timeout: 10m
+  retry_attempts: 3
