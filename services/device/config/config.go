@@ -1,4 +1,3 @@
-// services/device/config/config.go
 package config
 
 import (
@@ -79,7 +78,7 @@ type FirmwareConfig struct {
 	PrivateKeyPath string `mapstructure:"private_key_path"`
 }
 
-// OTAConfig holds settings for Over-The-Air updates.
+// OTAConfig holds settings for updates.
 type OTAConfig struct {
 	ChunkSize            int           `mapstructure:"chunk_size"`
 	MaxConcurrentUpdates int           `mapstructure:"max_concurrent_updates"`

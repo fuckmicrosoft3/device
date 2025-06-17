@@ -1,4 +1,3 @@
-// services/device/internal/core/service.go
 package core
 
 import (
@@ -249,16 +248,16 @@ func (s *TelemetryService) Stop() {
 
 // TelemetryProcessor handles async telemetry processing with reliability
 type TelemetryProcessor struct {
-	store         DataStore
-	messaging     *infrastructure.Messaging
-	logger        *logrus.Logger
-	queue         chan *Telemetry
-	retryQueue    chan *RetryItem
-	persistentWAL *infrastructure.WAL
-	workers       int
-	wg            sync.WaitGroup
-	shutdown      chan struct{}
-	stats         *ProcessorStats
+	store      DataStore
+	messaging  *infrastructure.Messaging
+	logger     *logrus.Logger
+	queue      chan *Telemetry
+	retryQueue chan *RetryItem
+	// persistentWAL *infrastructure.WAL
+	workers  int
+	wg       sync.WaitGroup
+	shutdown chan struct{}
+	stats    *ProcessorStats
 }
 
 type RetryItem struct {
@@ -278,21 +277,21 @@ type ProcessorStats struct {
 }
 
 func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryProcessor {
-	// Initialize Write-Ahead Log for persistence
-	wal, err := infrastructure.NewWAL("/data/telemetry-wal")
-	if err != nil {
-		logger.WithError(err).Error("Failed to initialize WAL, using in-memory fallback")
-	}
+	// // Initialize Write-Ahead Log for persistence
+	// wal, err := infrastructure.NewWAL("/data/telemetry-wal")
+	// if err != nil {
+	// 	logger.WithError(err).Error("Failed to initialize WAL, using in-memory fallback")
+	// }
 
 	return &TelemetryProcessor{
-		store:         store,
-		messaging:     messaging,
-		logger:        logger,
-		queue:         make(chan *Telemetry, 10000),
-		retryQueue:    make(chan *RetryItem, 5000),
-		persistentWAL: wal,
-		shutdown:      make(chan struct{}),
-		stats:         &ProcessorStats{},
+		store:      store,
+		messaging:  messaging,
+		logger:     logger,
+		queue:      make(chan *Telemetry, 10000),
+		retryQueue: make(chan *RetryItem, 5000),
+		// persistentWAL: wal,
+		shutdown: make(chan struct{}),
+		stats:    &ProcessorStats{},
 	}
 }
 
@@ -309,11 +308,11 @@ func (p *TelemetryProcessor) Start(workers int) {
 	p.wg.Add(1)
 	go p.retryWorker()
 
-	// Start WAL recovery
-	if p.persistentWAL != nil {
-		p.wg.Add(1)
-		go p.recoverFromWAL()
-	}
+	// // Start WAL recovery
+	// if p.persistentWAL != nil {
+	// 	p.wg.Add(1)
+	// 	go p.recoverFromWAL()
+	// }
 
 	p.logger.Infof("Started %d telemetry processor workers", workers)
 }
@@ -321,18 +320,18 @@ func (p *TelemetryProcessor) Start(workers int) {
 func (p *TelemetryProcessor) Stop() {
 	close(p.shutdown)
 	p.wg.Wait()
-	if p.persistentWAL != nil {
-		p.persistentWAL.Close()
-	}
+	// if p.persistentWAL != nil {
+	// 	p.persistentWAL.Close()
+	// }
 }
 
 func (p *TelemetryProcessor) Enqueue(telemetry *Telemetry) error {
-	// Write to WAL first for durability
-	if p.persistentWAL != nil {
-		if err := p.persistentWAL.Write(telemetry); err != nil {
-			p.logger.WithError(err).Warn("Failed to write to WAL")
-		}
-	}
+	// // Write to WAL first for durability
+	// if p.persistentWAL != nil {
+	// 	if err := p.persistentWAL.Write(telemetry); err != nil {
+	// 		p.logger.WithError(err).Warn("Failed to write to WAL")
+	// 	}
+	// }
 
 	select {
 	case p.queue <- telemetry:
@@ -473,10 +472,10 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 	if err != nil {
 		p.handleProcessingError(telemetry, err, retryCount)
 	} else {
-		// Remove from WAL on success
-		if p.persistentWAL != nil {
-			p.persistentWAL.Remove(telemetry.MessageID)
-		}
+		// // Remove from WAL on success
+		// if p.persistentWAL != nil {
+		// 	p.persistentWAL.Remove(telemetry.MessageID)
+		// }
 		p.updateStats(func(s *ProcessorStats) {
 			s.Processed++
 		})
@@ -527,34 +526,34 @@ func (p *TelemetryProcessor) persistToDeadLetter(telemetry *Telemetry, err error
 	// For now, just ensure it's in the WAL for manual recovery
 }
 
-func (p *TelemetryProcessor) recoverFromWAL() {
-	defer p.wg.Done()
+// func (p *TelemetryProcessor) recoverFromWAL() {
+// 	defer p.wg.Done()
 
-	if p.persistentWAL == nil {
-		return
-	}
+// 	if p.persistentWAL == nil {
+// 		return
+// 	}
 
-	messages, err := p.persistentWAL.ReadAll()
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to recover from WAL")
-		return
-	}
+// 	messages, err := p.persistentWAL.ReadAll()
+// 	if err != nil {
+// 		p.logger.WithError(err).Error("Failed to recover from WAL")
+// 		return
+// 	}
 
-	p.logger.Infof("Recovering %d messages from WAL", len(messages))
+// 	p.logger.Infof("Recovering %d messages from WAL", len(messages))
 
-	for _, msg := range messages {
-		telemetry, ok := msg.(*Telemetry)
-		if !ok {
-			continue
-		}
+// 	for _, msg := range messages {
+// 		telemetry, ok := msg.(*Telemetry)
+// 		if !ok {
+// 			continue
+// 		}
 
-		select {
-		case p.queue <- telemetry:
-		default:
-			p.logger.Warn("Queue full during WAL recovery")
-		}
-	}
-}
+// 		select {
+// 		case p.queue <- telemetry:
+// 		default:
+// 			p.logger.Warn("Queue full during WAL recovery")
+// 		}
+// 	}
+// }
 
 // --- Firmware Management Service Implementation ---
 

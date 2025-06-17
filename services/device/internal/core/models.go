@@ -10,9 +10,9 @@ import (
 // Constants for business logic
 const (
 	// Release channels
-	ReleaseChannelProduction = "major"
-	ReleaseChannelBeta       = "minor"
-	ReleaseChannelAlpha      = "patch"
+	ReleaseChannelProduction = "production"
+	ReleaseChannelStaging    = "staging"
+	ReleaseChannelTest       = "test"
 
 	// Release statuses
 	ReleaseStatusDraft      = "draft"
@@ -75,11 +75,12 @@ type Organization struct {
 	BaseModel
 	Name        string   `gorm:"uniqueIndex;not null" json:"name"`
 	Active      bool     `gorm:"default:true" json:"active"`
-	DeviceLimit int      `gorm:"default:1000" json:"device_limit"`
+	DeviceLimit int      `gorm:"default:1000" json:"device_limit"` //Consider impl regional sub-orgs
 	Devices     []Device `gorm:"foreignKey:OrganizationID" json:"-"`
+	URI         string   `gorm:"type:text" json:"uri"`
 }
 
-// Device represents an IoT edge device
+// Device represents a PCB attached to a physical device
 type Device struct {
 	BaseModel
 	DeviceUID       string        `gorm:"uniqueIndex;not null" json:"device_uid"`

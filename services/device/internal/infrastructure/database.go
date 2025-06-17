@@ -11,13 +11,10 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Database is a wrapper around the GORM database connection.
 type Database struct {
 	*gorm.DB
 }
 
-// NewDatabase establishes a connection to the database and returns the wrapper.
-// It no longer imports the `core` package.
 func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
@@ -38,13 +35,10 @@ func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 	return &Database{DB: db}, nil
 }
 
-// Migrate now accepts a variadic list of models, making it generic
-// and removing the dependency on the `core` package from this file.
 func (d *Database) Migrate(models ...interface{}) error {
 	return d.AutoMigrate(models...)
 }
 
-// Close gracefully terminates the database connection.
 func (d *Database) Close() error {
 	sqlDB, err := d.DB.DB()
 	if err != nil {

@@ -1,4 +1,3 @@
-// services/device/internal/api/handlers.go
 package api
 
 import (
@@ -203,6 +202,7 @@ func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 }
 
 // GetDeviceTelemetry retrieves historical telemetry
+// // TODO: Implement time range
 func (h *APIHandlers) GetDeviceTelemetry(c *gin.Context) {
 	deviceID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -281,7 +281,7 @@ func (h *APIHandlers) UploadFirmware(c *gin.Context) {
 	metadata := core.FirmwareMetadata{
 		Filename:       header.Filename,
 		Version:        c.PostForm("version"),
-		ReleaseChannel: c.DefaultPostForm("channel", core.ReleaseChannelAlpha),
+		ReleaseChannel: c.DefaultPostForm("release", core.ReleaseChannelTest),
 		ReleaseNotes:   c.PostForm("release_notes"),
 	}
 

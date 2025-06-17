@@ -11,7 +11,7 @@ import (
 var migrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Runs database migrations",
-	Long:  `Applies all necessary database schema migrations to the target database.`,
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Info("Connecting to database for migration...")
 		db, err := infrastructure.NewDatabase(cfg.Database)

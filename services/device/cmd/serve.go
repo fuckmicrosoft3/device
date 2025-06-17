@@ -1,4 +1,3 @@
-// services/device/cmd/serve.go
 package cmd
 
 import (
@@ -21,7 +20,7 @@ import (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Starts the Device Management API server",
+	Short: "Starts the Device Service API server",
 	Long:  `Launches the HTTP server and MQTT client to handle device registration, telemetry ingestion, and OTA updates.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServer()
@@ -33,7 +32,7 @@ func init() {
 }
 
 func runServer() error {
-	logger.Info("Initializing Device Management Service...")
+	logger.Info("Initializing Device Service...")
 
 	// --- Infrastructure Setup ---
 	logger.Info("Connecting to database...")
@@ -62,7 +61,7 @@ func runServer() error {
 	// --- Data Store Setup ---
 	dataStore := core.NewDataStore(db.DB)
 
-	// --- Individual Service Initialization ---
+	// --- Service Initialization ---
 
 	// Device Management Service
 	deviceManagement := core.NewDeviceManagementService(dataStore, cache, logger)
@@ -96,7 +95,7 @@ func runServer() error {
 		Authentication:     authentication,
 	}
 
-	// --- MQTT Setup for Telemetry Ingestion ---
+	// --- MQTT Setup ---
 	mqttSubscriber, err := setupMQTTSubscriber(telemetry, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed to setup MQTT subscriber")
@@ -170,8 +169,7 @@ func runServer() error {
 	}
 
 	// 4. Close infrastructure connections (deferred above)
-
-	logger.Info("Device Management Service shutdown complete")
+	logger.Info("Device Service shutdown complete")
 	return nil
 }
 

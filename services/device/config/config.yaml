@@ -1,13 +1,13 @@
-# services/device/config/config.yaml
 # Default configuration for the device service.
 # These values can be overridden by environment variables (e.g., DEVICE_SERVER__PORT=9000).
+
 server:
   port: 8080
   read_timeout: 15s
   write_timeout: 15s
 
 database:
-  dsn: "host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable"
+  dsn: "host=localhost user=postgres password=postgres dbname=device_db port=5432 sslmode=disable"
   max_open_conns: 25
   max_idle_conns: 10
   conn_max_lifetime: 5m
@@ -15,7 +15,7 @@ database:
   enable_tracing: false
 
 redis:
-  addr: "redis:6379"
+  addr: "localhost:6379"
   password: ""
   db: 0
   pool_size: 10
@@ -23,15 +23,15 @@ redis:
   dial_timeout: 5s
 
 service_bus:
-  connection_string: "" # Add your Azure Service Bus connection string here
+  connection_string: ""
   queue_name: "device-telemetry"
   max_retries: 3
   retry_delay: 1s
 
-# MQTT configuration for telemetry ingestion
+# MQTT configuration
 mqtt:
-  broker_url: "tcp://mqtt-broker:1883" # Use tls:// for secure connections
-  client_id: "device-service"
+  broker_url: "" 
+  client_id: ""
   username: ""
   password: ""
   qos: 1
@@ -39,7 +39,6 @@ mqtt:
   topics:
     - "devices/+/telemetry"      # Single device telemetry
     - "devices/+/telemetry/batch" # Batch telemetry
-    - "devices/+/status"          # Device status updates
   keep_alive: 30s
   connect_timeout: 10s
   max_reconnect_delay: 2m
@@ -48,7 +47,7 @@ firmware:
   storage_path: "/data/firmware"
   max_file_size: 10485760 # 10MB
   signing_enabled: false
-  private_key_path: "" # e.g., /keys/private.pem
+  private_key_path: "" 
 
 ota:
   chunk_size: 32768 # 32KB

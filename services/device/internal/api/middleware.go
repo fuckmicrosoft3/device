@@ -1,4 +1,3 @@
-// services/device/internal/api/middleware.go
 package api
 
 import (
@@ -176,8 +175,8 @@ func CORS() gin.HandlerFunc {
 
 // RateLimiter implements rate limiting for API endpoints
 func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
-	// Simple in-memory rate limiter
-	// In production, use Redis-based rate limiting
+	// Simple in-memory rate limiter for now
+	// TODO: use Redis-based rate limiting
 	clients := make(map[string]*rateLimitClient)
 
 	return func(c *gin.Context) {
