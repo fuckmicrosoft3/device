@@ -1,3 +1,4 @@
+// services/device/internal/core/repository.go
 package core
 
 import (
@@ -7,54 +8,54 @@ import (
 	"gorm.io/gorm"
 )
 
-// DataStore defines all data access operations
+// DataStore defines the interface for data persistence operations
 type DataStore interface {
+	// Transaction support
+	WithTransaction(ctx context.Context, fn func(ctx context.Context, tx DataStore) error) error
+
 	// Device operations
 	CreateDevice(ctx context.Context, device *Device) error
-	UpdateDevice(ctx context.Context, device *Device) error
 	GetDevice(ctx context.Context, id uint) (*Device, error)
 	GetDeviceByUID(ctx context.Context, uid string) (*Device, error)
-	ListDevicesByOrganization(ctx context.Context, orgID uint) ([]*Device, error)
+	UpdateDevice(ctx context.Context, device *Device) error
 	UpdateDeviceHeartbeat(ctx context.Context, deviceID uint) error
+	ListDevicesByOrganization(ctx context.Context, orgID uint) ([]*Device, error)
 
 	// Telemetry operations
 	SaveTelemetry(ctx context.Context, telemetry *Telemetry) error
-	SaveTelemetryBatch(ctx context.Context, telemetry []*Telemetry) error
-	MarkTelemetryProcessed(ctx context.Context, messageID string) error
 	GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error)
+	UpdateTelemetryPublishStatus(ctx context.Context, telemetryID string, published bool, publishedAt *time.Time, queue string) error
+	GetUnpublishedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error)
 
 	// Organization operations
 	CreateOrganization(ctx context.Context, org *Organization) error
-	UpdateOrganization(ctx context.Context, org *Organization) error
 	GetOrganization(ctx context.Context, id uint) (*Organization, error)
+	GetOrganizationByName(ctx context.Context, name string) (*Organization, error)
+	UpdateOrganization(ctx context.Context, org *Organization) error
 	ListOrganizations(ctx context.Context) ([]*Organization, error)
 
 	// Firmware operations
 	CreateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error
-	UpdateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error
 	GetFirmwareRelease(ctx context.Context, id uint) (*FirmwareRelease, error)
 	GetFirmwareByVersion(ctx context.Context, version string) (*FirmwareRelease, error)
+	UpdateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error
 	ListFirmwareReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error)
 	GetLatestApprovedFirmware(ctx context.Context, channel string) (*FirmwareRelease, error)
 
 	// Update session operations
 	CreateUpdateSession(ctx context.Context, session *UpdateSession) error
-	UpdateUpdateSession(ctx context.Context, session *UpdateSession) error
 	GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error)
+	UpdateUpdateSession(ctx context.Context, session *UpdateSession) error
 	GetActiveDeviceUpdate(ctx context.Context, deviceID uint) (*UpdateSession, error)
-	ListDeviceUpdateHistory(ctx context.Context, deviceID uint) ([]*UpdateSession, error)
 
 	// Access token operations
+	CreateAccessToken(ctx context.Context, token *AccessToken) error
 	GetAccessToken(ctx context.Context, token string) (*AccessToken, error)
-	CreateAccessToken(ctx context.Context, accessToken *AccessToken) error
 	UpdateTokenLastAccess(ctx context.Context, token string) error
 	DeleteAccessToken(ctx context.Context, token string) error
-
-	// Transaction support
-	WithTransaction(ctx context.Context, fn func(context.Context, DataStore) error) error
 }
 
-// dataStore implements DataStore interface
+// dataStore is the concrete implementation of DataStore
 type dataStore struct {
 	db *gorm.DB
 }
@@ -64,150 +65,140 @@ func NewDataStore(db *gorm.DB) DataStore {
 	return &dataStore{db: db}
 }
 
-// WithTransaction executes operations within a database transaction
-func (ds *dataStore) WithTransaction(ctx context.Context, fn func(context.Context, DataStore) error) error {
-	return ds.db.Transaction(func(tx *gorm.DB) error {
-		txStore := NewDataStore(tx)
+// WithTransaction executes a function within a database transaction
+func (s *dataStore) WithTransaction(ctx context.Context, fn func(ctx context.Context, tx DataStore) error) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		txStore := &dataStore{db: tx}
 		return fn(ctx, txStore)
 	})
 }
 
-// Device operations
+// --- Device Operations ---
 
-func (ds *dataStore) CreateDevice(ctx context.Context, device *Device) error {
-	return ds.db.WithContext(ctx).Create(device).Error
+func (s *dataStore) CreateDevice(ctx context.Context, device *Device) error {
+	return s.db.WithContext(ctx).Create(device).Error
 }
 
-func (ds *dataStore) UpdateDevice(ctx context.Context, device *Device) error {
-	return ds.db.WithContext(ctx).Save(device).Error
-}
-
-func (ds *dataStore) GetDevice(ctx context.Context, id uint) (*Device, error) {
+func (s *dataStore) GetDevice(ctx context.Context, id uint) (*Device, error) {
 	var device Device
-	err := ds.db.WithContext(ctx).Preload("Organization").First(&device, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &device, nil
+	err := s.db.WithContext(ctx).Preload("Organization").First(&device, id).Error
+	return &device, err
 }
 
-func (ds *dataStore) GetDeviceByUID(ctx context.Context, uid string) (*Device, error) {
+func (s *dataStore) GetDeviceByUID(ctx context.Context, uid string) (*Device, error) {
 	var device Device
-	err := ds.db.WithContext(ctx).Preload("Organization").
-		Where("device_uid = ?", uid).First(&device).Error
-	if err != nil {
-		return nil, err
-	}
-	return &device, nil
+	err := s.db.WithContext(ctx).Preload("Organization").Where("device_uid = ?", uid).First(&device).Error
+	return &device, err
 }
 
-func (ds *dataStore) ListDevicesByOrganization(ctx context.Context, orgID uint) ([]*Device, error) {
-	var devices []*Device
-	query := ds.db.WithContext(ctx).Preload("Organization")
-	if orgID > 0 {
-		query = query.Where("organization_id = ?", orgID)
-	}
-	err := query.Find(&devices).Error
-	return devices, err
+func (s *dataStore) UpdateDevice(ctx context.Context, device *Device) error {
+	return s.db.WithContext(ctx).Save(device).Error
 }
 
-func (ds *dataStore) UpdateDeviceHeartbeat(ctx context.Context, deviceID uint) error {
+func (s *dataStore) UpdateDeviceHeartbeat(ctx context.Context, deviceID uint) error {
 	now := time.Now()
-	return ds.db.WithContext(ctx).Model(&Device{}).
-		Where("id = ?", deviceID).
+	return s.db.WithContext(ctx).Model(&Device{}).Where("id = ?", deviceID).
 		Update("last_heartbeat", now).Error
 }
 
-// Telemetry operations
-
-func (ds *dataStore) SaveTelemetry(ctx context.Context, telemetry *Telemetry) error {
-	return ds.db.WithContext(ctx).Create(telemetry).Error
+func (s *dataStore) ListDevicesByOrganization(ctx context.Context, orgID uint) ([]*Device, error) {
+	var devices []*Device
+	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&devices).Error
+	return devices, err
 }
 
-func (ds *dataStore) SaveTelemetryBatch(ctx context.Context, telemetry []*Telemetry) error {
-	if len(telemetry) == 0 {
-		return nil
-	}
-	return ds.db.WithContext(ctx).CreateInBatches(telemetry, 100).Error
+// --- Telemetry Operations ---
+
+func (s *dataStore) SaveTelemetry(ctx context.Context, telemetry *Telemetry) error {
+	return s.db.WithContext(ctx).Create(telemetry).Error
 }
 
-func (ds *dataStore) MarkTelemetryProcessed(ctx context.Context, messageID string) error {
-	now := time.Now()
-	return ds.db.WithContext(ctx).Model(&Telemetry{}).
-		Where("message_id = ?", messageID).
-		Updates(map[string]interface{}{
-			"processed_at": now,
-			"published_at": now,
-		}).Error
-}
-
-func (ds *dataStore) GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error) {
+func (s *dataStore) GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error) {
 	var telemetry []*Telemetry
-	query := ds.db.WithContext(ctx).Where("device_id = ?", deviceID).
-		Order("received_at DESC")
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	err := query.Find(&telemetry).Error
+	err := s.db.WithContext(ctx).
+		Where("device_id = ?", deviceID).
+		Order("received_at DESC").
+		Limit(limit).
+		Find(&telemetry).Error
 	return telemetry, err
 }
 
-// Organization operations
-
-func (ds *dataStore) CreateOrganization(ctx context.Context, org *Organization) error {
-	return ds.db.WithContext(ctx).Create(org).Error
-}
-
-func (ds *dataStore) UpdateOrganization(ctx context.Context, org *Organization) error {
-	return ds.db.WithContext(ctx).Save(org).Error
-}
-
-func (ds *dataStore) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
-	var org Organization
-	err := ds.db.WithContext(ctx).First(&org, id).Error
-	if err != nil {
-		return nil, err
+func (s *dataStore) UpdateTelemetryPublishStatus(ctx context.Context, telemetryID string, published bool, publishedAt *time.Time, queue string) error {
+	updates := map[string]interface{}{
+		"published":          published,
+		"published_at":       publishedAt,
+		"published_to_queue": queue,
+		"updated_at":         time.Now(),
 	}
-	return &org, nil
+	return s.db.WithContext(ctx).Model(&Telemetry{}).
+		Where("id = ?", telemetryID).
+		Updates(updates).Error
 }
 
-func (ds *dataStore) ListOrganizations(ctx context.Context) ([]*Organization, error) {
+func (s *dataStore) GetUnpublishedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error) {
+	var telemetry []*Telemetry
+	err := s.db.WithContext(ctx).
+		Where("published = ?", false).
+		Where("processing_error = ?", false).
+		Order("received_at ASC").
+		Limit(limit).
+		Find(&telemetry).Error
+	return telemetry, err
+}
+
+// --- Organization Operations ---
+
+func (s *dataStore) CreateOrganization(ctx context.Context, org *Organization) error {
+	return s.db.WithContext(ctx).Create(org).Error
+}
+
+func (s *dataStore) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
+	var org Organization
+	err := s.db.WithContext(ctx).First(&org, id).Error
+	return &org, err
+}
+
+func (s *dataStore) GetOrganizationByName(ctx context.Context, name string) (*Organization, error) {
+	var org Organization
+	err := s.db.WithContext(ctx).Where("name = ?", name).First(&org).Error
+	return &org, err
+}
+
+func (s *dataStore) UpdateOrganization(ctx context.Context, org *Organization) error {
+	return s.db.WithContext(ctx).Save(org).Error
+}
+
+func (s *dataStore) ListOrganizations(ctx context.Context) ([]*Organization, error) {
 	var orgs []*Organization
-	err := ds.db.WithContext(ctx).Find(&orgs).Error
+	err := s.db.WithContext(ctx).Find(&orgs).Error
 	return orgs, err
 }
 
-// Firmware operations
+// --- Firmware Operations ---
 
-func (ds *dataStore) CreateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error {
-	return ds.db.WithContext(ctx).Create(firmware).Error
+func (s *dataStore) CreateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error {
+	return s.db.WithContext(ctx).Create(firmware).Error
 }
 
-func (ds *dataStore) UpdateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error {
-	return ds.db.WithContext(ctx).Save(firmware).Error
-}
-
-func (ds *dataStore) GetFirmwareRelease(ctx context.Context, id uint) (*FirmwareRelease, error) {
+func (s *dataStore) GetFirmwareRelease(ctx context.Context, id uint) (*FirmwareRelease, error) {
 	var firmware FirmwareRelease
-	err := ds.db.WithContext(ctx).First(&firmware, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &firmware, nil
+	err := s.db.WithContext(ctx).First(&firmware, id).Error
+	return &firmware, err
 }
 
-func (ds *dataStore) GetFirmwareByVersion(ctx context.Context, version string) (*FirmwareRelease, error) {
+func (s *dataStore) GetFirmwareByVersion(ctx context.Context, version string) (*FirmwareRelease, error) {
 	var firmware FirmwareRelease
-	err := ds.db.WithContext(ctx).Where("version = ?", version).First(&firmware).Error
-	if err != nil {
-		return nil, err
-	}
-	return &firmware, nil
+	err := s.db.WithContext(ctx).Where("version = ?", version).First(&firmware).Error
+	return &firmware, err
 }
 
-func (ds *dataStore) ListFirmwareReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error) {
+func (s *dataStore) UpdateFirmwareRelease(ctx context.Context, firmware *FirmwareRelease) error {
+	return s.db.WithContext(ctx).Save(firmware).Error
+}
+
+func (s *dataStore) ListFirmwareReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error) {
 	var releases []*FirmwareRelease
-	query := ds.db.WithContext(ctx)
+	query := s.db.WithContext(ctx)
 	if channel != "" {
 		query = query.Where("release_channel = ?", channel)
 	}
@@ -215,81 +206,63 @@ func (ds *dataStore) ListFirmwareReleases(ctx context.Context, channel string) (
 	return releases, err
 }
 
-func (ds *dataStore) GetLatestApprovedFirmware(ctx context.Context, channel string) (*FirmwareRelease, error) {
+func (s *dataStore) GetLatestApprovedFirmware(ctx context.Context, channel string) (*FirmwareRelease, error) {
 	var firmware FirmwareRelease
-	query := ds.db.WithContext(ctx).Where("release_status = ?", ReleaseStatusApproved)
-	if channel != "" {
-		query = query.Where("release_channel = ?", channel)
-	}
-	err := query.Order("created_at DESC").First(&firmware).Error
-	if err != nil {
-		return nil, err
-	}
-	return &firmware, nil
+	err := s.db.WithContext(ctx).
+		Where("release_channel = ? AND release_status = ?", channel, ReleaseStatusApproved).
+		Order("created_at DESC").
+		First(&firmware).Error
+	return &firmware, err
 }
 
-// Update session operations
+// --- Update Session Operations ---
 
-func (ds *dataStore) CreateUpdateSession(ctx context.Context, session *UpdateSession) error {
-	return ds.db.WithContext(ctx).Create(session).Error
+func (s *dataStore) CreateUpdateSession(ctx context.Context, session *UpdateSession) error {
+	return s.db.WithContext(ctx).Create(session).Error
 }
 
-func (ds *dataStore) UpdateUpdateSession(ctx context.Context, session *UpdateSession) error {
-	return ds.db.WithContext(ctx).Save(session).Error
-}
-
-func (ds *dataStore) GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error) {
+func (s *dataStore) GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error) {
 	var session UpdateSession
-	err := ds.db.WithContext(ctx).Preload("Device").Preload("Firmware").
-		Where("session_id = ?", sessionID).First(&session).Error
-	if err != nil {
-		return nil, err
-	}
-	return &session, nil
+	err := s.db.WithContext(ctx).
+		Preload("Device").
+		Preload("Firmware").
+		Where("session_id = ?", sessionID).
+		First(&session).Error
+	return &session, err
 }
 
-func (ds *dataStore) GetActiveDeviceUpdate(ctx context.Context, deviceID uint) (*UpdateSession, error) {
+func (s *dataStore) UpdateUpdateSession(ctx context.Context, session *UpdateSession) error {
+	return s.db.WithContext(ctx).Save(session).Error
+}
+
+func (s *dataStore) GetActiveDeviceUpdate(ctx context.Context, deviceID uint) (*UpdateSession, error) {
 	var session UpdateSession
-	err := ds.db.WithContext(ctx).
+	err := s.db.WithContext(ctx).
 		Where("device_id = ? AND update_status IN ?", deviceID,
 			[]string{UpdateStatusInitiated, UpdateStatusDownloading}).
-		Order("created_at DESC").First(&session).Error
-	if err != nil {
-		return nil, err
-	}
-	return &session, nil
+		First(&session).Error
+	return &session, err
 }
 
-func (ds *dataStore) ListDeviceUpdateHistory(ctx context.Context, deviceID uint) ([]*UpdateSession, error) {
-	var sessions []*UpdateSession
-	err := ds.db.WithContext(ctx).Preload("Firmware").
-		Where("device_id = ?", deviceID).
-		Order("created_at DESC").Find(&sessions).Error
-	return sessions, err
+// --- Access Token Operations ---
+
+func (s *dataStore) CreateAccessToken(ctx context.Context, token *AccessToken) error {
+	return s.db.WithContext(ctx).Create(token).Error
 }
 
-// Access token operations
-
-func (ds *dataStore) GetAccessToken(ctx context.Context, token string) (*AccessToken, error) {
+func (s *dataStore) GetAccessToken(ctx context.Context, token string) (*AccessToken, error) {
 	var accessToken AccessToken
-	err := ds.db.WithContext(ctx).Where("token = ?", token).First(&accessToken).Error
-	if err != nil {
-		return nil, err
-	}
-	return &accessToken, nil
+	err := s.db.WithContext(ctx).Where("token = ?", token).First(&accessToken).Error
+	return &accessToken, err
 }
 
-func (ds *dataStore) CreateAccessToken(ctx context.Context, accessToken *AccessToken) error {
-	return ds.db.WithContext(ctx).Create(accessToken).Error
-}
-
-func (ds *dataStore) UpdateTokenLastAccess(ctx context.Context, token string) error {
+func (s *dataStore) UpdateTokenLastAccess(ctx context.Context, token string) error {
 	now := time.Now()
-	return ds.db.WithContext(ctx).Model(&AccessToken{}).
+	return s.db.WithContext(ctx).Model(&AccessToken{}).
 		Where("token = ?", token).
-		Update("last_access_at", now).Error
+		Update("last_accessed_at", now).Error
 }
 
-func (ds *dataStore) DeleteAccessToken(ctx context.Context, token string) error {
-	return ds.db.WithContext(ctx).Where("token = ?", token).Delete(&AccessToken{}).Error
+func (s *dataStore) DeleteAccessToken(ctx context.Context, token string) error {
+	return s.db.WithContext(ctx).Where("token = ?", token).Delete(&AccessToken{}).Error
 }

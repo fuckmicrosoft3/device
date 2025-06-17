@@ -177,61 +177,164 @@ func (s *DeviceManagementService) getCachedDevice(ctx context.Context, uid strin
 // --- Telemetry Service Implementation ---
 
 type TelemetryService struct {
-	store     DataStore
-	messaging *infrastructure.Messaging
-	logger    *logrus.Logger
-	processor *TelemetryProcessor
+	store       DataStore
+	messaging   *infrastructure.Messaging
+	logger      *logrus.Logger
+	processor   *TelemetryProcessor
+	queueRouter *QueueRouter
 }
 
-func NewTelemetryService(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryService {
-	processor := NewTelemetryProcessor(store, messaging, logger)
+func NewTelemetryService(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger, cfg config.QueueRoutingConfig) *TelemetryService {
+	queueRouter := NewQueueRouter(cfg)
+	processor := NewTelemetryProcessor(store, messaging, logger, queueRouter)
 	svc := &TelemetryService{
-		store:     store,
-		messaging: messaging,
-		logger:    logger,
-		processor: processor,
+		store:       store,
+		messaging:   messaging,
+		logger:      logger,
+		processor:   processor,
+		queueRouter: queueRouter,
 	}
 	processor.Start(10) // 10 workers
 	return svc
 }
 
-func (s *TelemetryService) IngestTelemetry(ctx context.Context, deviceUID string, telemetry *Telemetry) error {
-	if telemetry.MessageID == "" {
-		telemetry.MessageID = uuid.New().String()
+func (s *TelemetryService) IngestTelemetry(ctx context.Context, device *Device, rawPayload json.RawMessage) error {
+	// Parse raw JSON to extract "ev" field
+	var payloadMap map[string]interface{}
+	if err := json.Unmarshal(rawPayload, &payloadMap); err != nil {
+		return BusinessError{"TELEMETRY_002", "invalid JSON payload"}
 	}
 
-	// Validate device exists
-	device, err := s.store.GetDeviceByUID(ctx, deviceUID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrDeviceNotFound
-		}
-		return err
+	// Extract and validate "ev" field
+	evValue, exists := payloadMap["ev"]
+	if !exists {
+		return BusinessError{"TELEMETRY_003", "missing required field 'ev' in payload"}
 	}
 
+	telemetryType, ok := evValue.(string)
+	if !ok || telemetryType == "" {
+		return BusinessError{"TELEMETRY_004", "field 'ev' must be a non-empty string"}
+	}
+
+	// Validate device is active
 	if !device.Active {
 		return ErrDeviceInactive
 	}
 
-	telemetry.DeviceID = device.ID
-	telemetry.ReceivedAt = time.Now()
+	// Generate server-side UUID
+	telemetryID := uuid.New().String()
+
+	// Add UUID to payload
+	payloadMap["uuid"] = telemetryID
+
+	// Re-marshal enriched payload
+	enrichedPayload, err := json.Marshal(payloadMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal enriched payload: %w", err)
+	}
+
+	// Create telemetry record
+	telemetry := &Telemetry{
+		ID:                 telemetryID,
+		DeviceID:           device.ID,
+		DeviceUID:          device.DeviceUID,
+		DeviceSerialNumber: device.SerialNumber,
+		TelemetryType:      telemetryType,
+		Payload:            enrichedPayload,
+		ReceivedAt:         time.Now(),
+		Published:          false,
+		PublishedAt:        nil,
+		ProcessingError:    false,
+	}
+
+	// Determine target queue based on organization and telemetry type
+	targetQueue, err := s.queueRouter.GetQueueForTelemetry(device.OrganizationName, telemetryType)
+	if err != nil {
+		s.logger.WithFields(logrus.Fields{
+			"organization":   device.OrganizationName,
+			"telemetry_type": telemetryType,
+		}).Warn("No queue route found for telemetry type")
+		telemetry.ProcessingError = true
+		telemetry.ProcessingErrorMessage = "no queue route configured"
+	} else {
+		telemetry.PublishedToQueue = targetQueue
+	}
 
 	// Enqueue for async processing with reliability
 	return s.processor.Enqueue(telemetry)
 }
 
-func (s *TelemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) error {
-	for _, telemetry := range batch {
-		if telemetry.MessageID == "" {
-			telemetry.MessageID = uuid.New().String()
-		}
-		telemetry.ReceivedAt = time.Now()
+func (s *TelemetryService) IngestBatch(ctx context.Context, device *Device, rawPayloads []json.RawMessage) error {
+	var telemetryBatch []*Telemetry
 
+	for _, rawPayload := range rawPayloads {
+		// Parse raw JSON to extract "ev" field
+		var payloadMap map[string]interface{}
+		if err := json.Unmarshal(rawPayload, &payloadMap); err != nil {
+			s.logger.WithError(err).Warn("Invalid JSON in batch, skipping")
+			continue
+		}
+
+		// Extract and validate "ev" field
+		evValue, exists := payloadMap["ev"]
+		if !exists {
+			s.logger.Warn("Missing 'ev' field in batch payload, skipping")
+			continue
+		}
+
+		telemetryType, ok := evValue.(string)
+		if !ok || telemetryType == "" {
+			s.logger.Warn("Invalid 'ev' field in batch payload, skipping")
+			continue
+		}
+
+		// Generate server-side UUID
+		telemetryID := uuid.New().String()
+
+		// Add UUID to payload
+		payloadMap["uuid"] = telemetryID
+
+		// Re-marshal enriched payload
+		enrichedPayload, err := json.Marshal(payloadMap)
+		if err != nil {
+			s.logger.WithError(err).Warn("Failed to marshal enriched payload, skipping")
+			continue
+		}
+
+		// Create telemetry record
+		telemetry := &Telemetry{
+			ID:                 telemetryID,
+			DeviceID:           device.ID,
+			DeviceUID:          device.DeviceUID,
+			DeviceSerialNumber: device.SerialNumber,
+			TelemetryType:      telemetryType,
+			Payload:            enrichedPayload,
+			ReceivedAt:         time.Now(),
+			Published:          false,
+			PublishedAt:        nil,
+			ProcessingError:    false,
+		}
+
+		// Determine target queue
+		targetQueue, err := s.queueRouter.GetQueueForTelemetry(device.OrganizationName, telemetryType)
+		if err != nil {
+			telemetry.ProcessingError = true
+			telemetry.ProcessingErrorMessage = "no queue route configured"
+		} else {
+			telemetry.PublishedToQueue = targetQueue
+		}
+
+		telemetryBatch = append(telemetryBatch, telemetry)
+	}
+
+	// Process valid telemetry
+	for _, telemetry := range telemetryBatch {
 		if err := s.processor.Enqueue(telemetry); err != nil {
-			s.logger.WithError(err).Warn("Failed to enqueue telemetry")
-			// Continue processing other messages
+			s.logger.WithError(err).WithField("telemetry_id", telemetry.ID).
+				Warn("Failed to enqueue telemetry from batch")
 		}
 	}
+
 	return nil
 }
 
@@ -247,11 +350,52 @@ func (s *TelemetryService) Stop() {
 	s.processor.Stop()
 }
 
+// QueueRouter handles routing telemetry to appropriate queues
+type QueueRouter struct {
+	routes map[string]map[string]string // organization -> telemetryType -> queueName
+	logger *logrus.Logger
+}
+
+func NewQueueRouter(cfg config.QueueRoutingConfig) *QueueRouter {
+	router := &QueueRouter{
+		routes: make(map[string]map[string]string),
+		logger: logrus.New(),
+	}
+
+	// Build routing table from configuration
+	for _, orgConfig := range cfg.Organizations {
+		orgRoutes := make(map[string]string)
+		for _, queueRoute := range orgConfig.QueueRoutes {
+			for _, telemetryType := range queueRoute.TelemetryTypes {
+				orgRoutes[telemetryType] = queueRoute.QueueName
+			}
+		}
+		router.routes[orgConfig.OrganizationName] = orgRoutes
+	}
+
+	return router
+}
+
+func (r *QueueRouter) GetQueueForTelemetry(organizationName, telemetryType string) (string, error) {
+	orgRoutes, exists := r.routes[organizationName]
+	if !exists {
+		return "", fmt.Errorf("no routes configured for organization: %s", organizationName)
+	}
+
+	queueName, exists := orgRoutes[telemetryType]
+	if !exists {
+		return "", fmt.Errorf("no queue configured for telemetry type: %s", telemetryType)
+	}
+
+	return queueName, nil
+}
+
 // TelemetryProcessor handles async telemetry processing with reliability
 type TelemetryProcessor struct {
 	store         DataStore
 	messaging     *infrastructure.Messaging
 	logger        *logrus.Logger
+	queueRouter   *QueueRouter
 	queue         chan *Telemetry
 	retryQueue    chan *RetryItem
 	persistentWAL *infrastructure.WAL
@@ -277,7 +421,7 @@ type ProcessorStats struct {
 	RetryQueueDepth int
 }
 
-func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryProcessor {
+func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger, queueRouter *QueueRouter) *TelemetryProcessor {
 	// Initialize Write-Ahead Log for persistence
 	wal, err := infrastructure.NewWAL("/data/telemetry-wal")
 	if err != nil {
@@ -288,6 +432,7 @@ func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging,
 		store:         store,
 		messaging:     messaging,
 		logger:        logger,
+		queueRouter:   queueRouter,
 		queue:         make(chan *Telemetry, 10000),
 		retryQueue:    make(chan *RetryItem, 5000),
 		persistentWAL: wal,
@@ -455,15 +600,24 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 			return fmt.Errorf("failed to update heartbeat: %w", err)
 		}
 
-		// Publish to messaging system
-		if p.messaging != nil {
-			if err := p.messaging.PublishWithRetry(ctx, "device-telemetry", telemetry, 3); err != nil {
+		// Publish to messaging system if configured and no processing error
+		if p.messaging != nil && !telemetry.ProcessingError && telemetry.PublishedToQueue != "" {
+			// Publish to the specific queue determined by router
+			if err := p.messaging.PublishToQueue(ctx, telemetry.PublishedToQueue, telemetry, 3); err != nil {
 				// Log but don't fail the transaction
-				p.logger.WithError(err).Warn("Failed to publish to messaging system")
-			}
-
-			if err := tx.MarkTelemetryProcessed(ctx, telemetry.MessageID); err != nil {
-				return fmt.Errorf("failed to mark as processed: %w", err)
+				p.logger.WithError(err).WithFields(logrus.Fields{
+					"queue":          telemetry.PublishedToQueue,
+					"telemetry_type": telemetry.TelemetryType,
+					"telemetry_id":   telemetry.ID,
+				}).Warn("Failed to publish to messaging system")
+			} else {
+				// Mark as published
+				now := time.Now()
+				telemetry.Published = true
+				telemetry.PublishedAt = &now
+				if err := tx.UpdateTelemetryPublishStatus(ctx, telemetry.ID, true, &now, telemetry.PublishedToQueue); err != nil {
+					return fmt.Errorf("failed to update publish status: %w", err)
+				}
 			}
 		}
 
@@ -475,17 +629,24 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 	} else {
 		// Remove from WAL on success
 		if p.persistentWAL != nil {
-			p.persistentWAL.Remove(telemetry.MessageID)
+			p.persistentWAL.Remove(telemetry.ID)
 		}
 		p.updateStats(func(s *ProcessorStats) {
 			s.Processed++
 		})
+
+		p.logger.WithFields(logrus.Fields{
+			"telemetry_id":   telemetry.ID,
+			"telemetry_type": telemetry.TelemetryType,
+			"queue":          telemetry.PublishedToQueue,
+			"published":      telemetry.Published,
+		}).Debug("Telemetry processed successfully")
 	}
 }
 
 func (p *TelemetryProcessor) handleProcessingError(telemetry *Telemetry, err error, retryCount int) {
 	p.logger.WithError(err).WithFields(logrus.Fields{
-		"message_id":  telemetry.MessageID,
+		"message_id":  telemetry.ID,
 		"retry_count": retryCount,
 	}).Error("Failed to process telemetry")
 
@@ -516,7 +677,7 @@ func (p *TelemetryProcessor) handleProcessingError(telemetry *Telemetry, err err
 
 func (p *TelemetryProcessor) persistToDeadLetter(telemetry *Telemetry, err error) {
 	// Implement dead letter persistence
-	p.logger.WithError(err).WithField("message_id", telemetry.MessageID).
+	p.logger.WithError(err).WithField("message_id", telemetry.ID).
 		Error("Moving telemetry to dead letter queue")
 
 	p.updateStats(func(s *ProcessorStats) {

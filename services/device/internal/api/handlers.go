@@ -2,6 +2,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -140,9 +141,10 @@ func (h *APIHandlers) UpdateDeviceStatus(c *gin.Context) {
 
 // IngestTelemetry receives device telemetry data via HTTP
 func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
-	var telemetry core.Telemetry
-	if err := c.ShouldBindJSON(&telemetry); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid telemetry format"})
+	// Get raw JSON payload
+	rawPayload, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
 		return
 	}
 
@@ -153,33 +155,33 @@ func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 		return
 	}
 
-	deviceUID := device.(*core.Device).DeviceUID
+	deviceObj := device.(*core.Device)
 
 	// Record heartbeat
-	h.deviceManagement.RecordHeartbeat(c.Request.Context(), deviceUID)
+	h.deviceManagement.RecordHeartbeat(c.Request.Context(), deviceObj.DeviceUID)
 
-	if err := h.telemetry.IngestTelemetry(c.Request.Context(), deviceUID, &telemetry); err != nil {
-		switch err {
-		case core.ErrDeviceNotFound:
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		case core.ErrDeviceInactive:
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		default:
+	// Process telemetry
+	if err := h.telemetry.IngestTelemetry(c.Request.Context(), deviceObj, json.RawMessage(rawPayload)); err != nil {
+		if businessErr, ok := err.(core.BusinessError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": businessErr.Message,
+				"code":  businessErr.Code,
+			})
+		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process telemetry"})
 		}
 		return
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"message_id": telemetry.MessageID,
-		"status":     "accepted",
+		"status": "accepted",
 	})
 }
 
 // IngestBatchTelemetry receives multiple telemetry messages via HTTP
 func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 	var req struct {
-		Messages []*core.Telemetry `json:"messages"`
+		Messages []json.RawMessage `json:"messages"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid batch format"})
@@ -191,7 +193,19 @@ func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 		return
 	}
 
-	if err := h.telemetry.IngestBatch(c.Request.Context(), req.Messages); err != nil {
+	// Get device from context (if authenticated as device)
+	device, exists := c.Get("device")
+	var deviceObj *core.Device
+	if exists {
+		deviceObj = device.(*core.Device)
+	} else {
+		// For batch, might be authenticated via API token
+		// In this case, device info should be in each message
+		c.JSON(http.StatusBadRequest, gin.H{"error": "device authentication required for batch ingestion"})
+		return
+	}
+
+	if err := h.telemetry.IngestBatch(c.Request.Context(), deviceObj, req.Messages); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process batch"})
 		return
 	}

@@ -11,15 +11,16 @@ import (
 
 // Config holds the complete configuration for the service.
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	ServiceBus ServiceBusConfig `mapstructure:"service_bus"`
-	MQTT       *MQTTConfig      `mapstructure:"mqtt"`
-	Firmware   FirmwareConfig   `mapstructure:"firmware"`
-	OTA        OTAConfig        `mapstructure:"ota"`
-	Storage    StorageConfig    `mapstructure:"storage"`
-	Logger     *logrus.Logger
+	Server       ServerConfig       `mapstructure:"server"`
+	Database     DatabaseConfig     `mapstructure:"database"`
+	Redis        RedisConfig        `mapstructure:"redis"`
+	ServiceBus   ServiceBusConfig   `mapstructure:"service_bus"`
+	MQTT         *MQTTConfig        `mapstructure:"mqtt"`
+	Firmware     FirmwareConfig     `mapstructure:"firmware"`
+	OTA          OTAConfig          `mapstructure:"ota"`
+	Storage      StorageConfig      `mapstructure:"storage"`
+	QueueRouting QueueRoutingConfig `mapstructure:"queue_routing"`
+	Logger       *logrus.Logger
 }
 
 // ServerConfig holds the HTTP server settings.
@@ -93,6 +94,25 @@ type StorageConfig struct {
 	DeadLetterPath string `mapstructure:"dead_letter_path"`
 	BackupPath     string `mapstructure:"backup_path"`
 	RetentionDays  int    `mapstructure:"retention_days"`
+}
+
+// QueueRoutingConfig holds queue routing configuration for telemetry
+type QueueRoutingConfig struct {
+	Organizations []QueueConfig `mapstructure:"organizations"`
+}
+
+// QueueConfig holds queue configuration for an organization
+type QueueConfig struct {
+	OrganizationName string       `mapstructure:"organization_name"`
+	Environment      string       `mapstructure:"environment"`
+	ConnectionString string       `mapstructure:"connection_string"`
+	QueueRoutes      []QueueRoute `mapstructure:"queue_routes"`
+}
+
+// QueueRoute maps telemetry types to queue names
+type QueueRoute struct {
+	QueueName      string   `mapstructure:"queue_name"`
+	TelemetryTypes []string `mapstructure:"telemetry_types"`
 }
 
 // Load reads configuration from a file and environment variables.

@@ -1,18 +1,122 @@
+// services/device/internal/core/models.go
 package core
 
 import (
-	"fmt"
+	"encoding/json"
 	"time"
-
-	"gorm.io/gorm"
+	"fmt"
 )
 
-// Constants for business logic
+// Device represents a physical IoT device
+type Device struct {
+	ID               uint         `json:"id" gorm:"primaryKey"`
+	DeviceUID        string       `json:"device_uid" gorm:"uniqueIndex;not null"`
+	SerialNumber     string       `json:"serial_number" gorm:"uniqueIndex;not null"`
+	OrganizationID   uint         `json:"organization_id" gorm:"index;not null"`
+	OrganizationName string       `json:"organization_name" gorm:"not null"` // e.g., "staging.app.ingestor"
+	FirmwareVersion  string       `json:"firmware_version"`
+	HardwareVersion  string       `json:"hardware_version"`
+	Active           bool         `json:"active" gorm:"default:true"`
+	UpdatesEnabled   bool         `json:"updates_enabled" gorm:"default:true"`
+	LastHeartbeat    *time.Time   `json:"last_heartbeat"`
+	CreatedAt        time.Time    `json:"created_at"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	Organization     Organization `gorm:"foreignKey:OrganizationID"`
+}
+
+// Telemetry represents device telemetry data with business context
+type Telemetry struct {
+	ID                     string          `json:"id" gorm:"primaryKey"` // Server-generated UUID
+	DeviceID               uint            `json:"device_id" gorm:"index;not null"`
+	DeviceUID              string          `json:"device_uid" gorm:"index;not null"`
+	DeviceSerialNumber     string          `json:"device_serial_number" gorm:"not null"`
+	TelemetryType          string          `json:"telemetry_type" gorm:"index;not null"` // From "ev" field
+	Payload                json.RawMessage `json:"payload" gorm:"type:jsonb"`
+	ReceivedAt             time.Time       `json:"received_at" gorm:"index;not null"`
+	Published              bool            `json:"published" gorm:"default:false;index"`
+	PublishedAt            *time.Time      `json:"published_at"`
+	PublishedToQueue       string          `json:"published_to_queue"` // Which queue it was sent to
+	ProcessingError        bool            `json:"processing_error" gorm:"default:false"`
+	ProcessingErrorMessage string          `json:"processing_error_message"`
+	CreatedAt              time.Time       `json:"created_at"`
+	UpdatedAt              time.Time       `json:"updated_at"`
+	Device                 Device          `gorm:"foreignKey:DeviceID"`
+}
+
+// Organization represents a customer organization
+type Organization struct {
+	ID                  uint      `json:"id" gorm:"primaryKey"`
+	Name                string    `json:"name" gorm:"uniqueIndex;not null"` // e.g., "staging.app.ingestor"
+	DisplayName         string    `json:"display_name"`
+	Environment         string    `json:"environment" gorm:"not null"` // "staging" or "production"
+	ServiceBusNamespace string    `json:"service_bus_namespace"`       // For queue routing
+	Active              bool      `json:"active" gorm:"default:true"`
+	DeviceLimit         int       `json:"device_limit" gorm:"default:100"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// FirmwareRelease represents a firmware version release
+type FirmwareRelease struct {
+	ID               uint      `json:"id" gorm:"primaryKey"`
+	Version          string    `json:"version" gorm:"uniqueIndex;not null"`
+	ReleaseChannel   string    `json:"release_channel" gorm:"index;not null"`
+	StoragePath      string    `json:"storage_path" gorm:"not null"`
+	Checksum         string    `json:"checksum" gorm:"not null"`
+	SizeBytes        int64     `json:"size_bytes" gorm:"not null"`
+	DigitalSignature string    `json:"digital_signature"`
+	ReleaseStatus    string    `json:"release_status" gorm:"index;not null"`
+	ReleaseNotes     string    `json:"release_notes"`
+	MinimumVersion   string    `json:"minimum_version"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// UpdateSession represents an OTA update session
+type UpdateSession struct {
+	ID               uint            `json:"id" gorm:"primaryKey"`
+	SessionID        string          `json:"session_id" gorm:"uniqueIndex;not null"`
+	DeviceID         uint            `json:"device_id" gorm:"index;not null"`
+	FirmwareID       uint            `json:"firmware_id" gorm:"index;not null"`
+	UpdateStatus     string          `json:"update_status" gorm:"index;not null"`
+	ProgressPercent  int             `json:"progress_percent" gorm:"default:0"`
+	BytesTransferred int64           `json:"bytes_transferred" gorm:"default:0"`
+	TransferRate     int64           `json:"transfer_rate"`
+	StartedAt        *time.Time      `json:"started_at"`
+	CompletedAt      *time.Time      `json:"completed_at"`
+	FailureReason    string          `json:"failure_reason"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+	Device           Device          `gorm:"foreignKey:DeviceID"`
+	Firmware         FirmwareRelease `gorm:"foreignKey:FirmwareID"`
+}
+
+// AccessToken represents API authentication tokens
+type AccessToken struct {
+	ID             uint       `json:"id" gorm:"primaryKey"`
+	Token          string     `json:"token" gorm:"uniqueIndex;not null"`
+	Description    string     `json:"description"`
+	Scopes         []string   `json:"scopes" gorm:"type:text[]"`
+	LastAccessedAt *time.Time `json:"last_accessed_at"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// TableName overrides for GORM
+func (Device) TableName() string          { return "devices" }
+func (Telemetry) TableName() string       { return "telemetry" }
+func (Organization) TableName() string    { return "organizations" }
+func (FirmwareRelease) TableName() string { return "firmware_releases" }
+func (UpdateSession) TableName() string   { return "update_sessions" }
+func (AccessToken) TableName() string     { return "access_tokens" }
+
+// Constants for business processes
 const (
 	// Release channels
-	ReleaseChannelProduction = "major"
-	ReleaseChannelBeta       = "minor"
-	ReleaseChannelAlpha      = "patch"
+	ReleaseChannelAlpha      = "alpha"
+	ReleaseChannelBeta       = "beta"
+	ReleaseChannelProduction = "production"
 
 	// Release statuses
 	ReleaseStatusDraft      = "draft"
@@ -23,9 +127,28 @@ const (
 	// Update statuses
 	UpdateStatusInitiated   = "initiated"
 	UpdateStatusDownloading = "downloading"
-	UpdateStatusInstalling  = "installing"
 	UpdateStatusCompleted   = "completed"
 	UpdateStatusFailed      = "failed"
+	UpdateStatusCancelled   = "cancelled"
+
+	// Environments
+	EnvironmentStaging    = "staging"
+	EnvironmentProduction = "production"
+
+	// Common telemetry types (from "ev" field)
+	TelemetryTypeCheck         = "check"
+	TelemetryTypeLocation      = "location"
+	TelemetryTypeGPS           = "gps"
+	TelemetryTypeSensors       = "sensors"
+	TelemetryTypeTransaction   = "prec"
+	TelemetryTypeDrop          = "drop"
+	TelemetryTypePay           = "pay"
+	TelemetryTypeSubscribe     = "subscribe"
+	TelemetryTypeRefill        = "refill"
+	TelemetryTypeError         = "error"
+	TelemetryTypeNetworkStatus = "net"
+	TelemetryTypeMemoryStatus  = "mem"
+	TelemetryTypeCanisterCheck = "can_refill"
 )
 
 // Business-specific errors
@@ -62,87 +185,25 @@ var (
 	ErrOrganizationInactive = BusinessError{"ORG_002", "organization is inactive"}
 )
 
-// BaseModel contains common fields for all entities
-type BaseModel struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+// GetID returns the telemetry ID
+func (t *Telemetry) GetID() string {
+	return t.ID
 }
 
-// Organization represents a device tenant
-type Organization struct {
-	BaseModel
-	Name        string   `gorm:"uniqueIndex;not null" json:"name"`
-	Active      bool     `gorm:"default:true" json:"active"`
-	DeviceLimit int      `gorm:"default:1000" json:"device_limit"`
-	Devices     []Device `gorm:"foreignKey:OrganizationID" json:"-"`
+// GetTelemetryType returns the telemetry type
+func (t *Telemetry) GetTelemetryType() string {
+	return t.TelemetryType
 }
 
-// Device represents an IoT edge device
-type Device struct {
-	BaseModel
-	DeviceUID       string        `gorm:"uniqueIndex;not null" json:"device_uid"`
-	SerialNumber    string        `gorm:"index" json:"serial_number"`
-	OrganizationID  uint          `gorm:"not null" json:"organization_id"`
-	Organization    *Organization `json:"organization,omitempty"`
-	FirmwareVersion string        `json:"firmware_version"`
-	Active          bool          `gorm:"default:true" json:"active"`
-	UpdatesEnabled  bool          `gorm:"default:true" json:"updates_enabled"`
-	LastHeartbeat   *time.Time    `json:"last_heartbeat"`
-	Telemetry       []Telemetry   `gorm:"foreignKey:DeviceID" json:"-"`
+// Queue routing configuration
+type QueueRoute struct {
+	QueueName      string   `json:"queue_name"`
+	TelemetryTypes []string `json:"telemetry_types"`
 }
 
-// Telemetry represents device telemetry data
-type Telemetry struct {
-	MessageID   string     `gorm:"primaryKey" json:"message_id"`
-	DeviceID    uint       `gorm:"index;not null" json:"device_id"`
-	Device      *Device    `json:"-"`
-	Payload     string     `gorm:"type:text" json:"payload"`
-	ProcessedAt *time.Time `json:"processed_at"`
-	PublishedAt *time.Time `json:"published_at"`
-	ReceivedAt  time.Time  `json:"received_at" gorm:"default:CURRENT_TIMESTAMP"`
-}
-
-// FirmwareRelease represents a deployable firmware version
-type FirmwareRelease struct {
-	BaseModel
-	Version          string          `gorm:"uniqueIndex;not null" json:"version"`
-	ReleaseChannel   string          `gorm:"index;not null" json:"release_channel"` // major, minor, patch
-	StoragePath      string          `json:"-"`                                     // Internal path
-	Checksum         string          `gorm:"not null" json:"checksum"`
-	SizeBytes        int64           `gorm:"not null" json:"size_bytes"`
-	DigitalSignature string          `json:"digital_signature,omitempty"`
-	ReleaseStatus    string          `gorm:"default:'draft'" json:"release_status"` // draft, testing, approved, deprecated
-	ReleaseNotes     string          `gorm:"type:text" json:"release_notes"`
-	MinimumVersion   string          `json:"minimum_version,omitempty"`
-	UpdateSessions   []UpdateSession `gorm:"foreignKey:FirmwareID" json:"-"`
-}
-
-// UpdateSession represents an OTA update process
-type UpdateSession struct {
-	BaseModel
-	SessionID        string           `gorm:"uniqueIndex;not null" json:"session_id"`
-	DeviceID         uint             `gorm:"index;not null" json:"device_id"`
-	Device           *Device          `json:"device,omitempty"`
-	FirmwareID       uint             `gorm:"not null" json:"firmware_id"`
-	Firmware         *FirmwareRelease `json:"firmware,omitempty"`
-	UpdateStatus     string           `gorm:"index;not null" json:"update_status"` // initiated, downloading, installing, completed, failed
-	ProgressPercent  int              `gorm:"default:0" json:"progress_percent"`
-	StartedAt        *time.Time       `json:"started_at"`
-	CompletedAt      *time.Time       `json:"completed_at"`
-	FailureReason    string           `json:"failure_reason,omitempty"`
-	RetryAttempt     int              `gorm:"default:0" json:"retry_attempt"`
-	BytesTransferred int64            `json:"bytes_transferred"`
-	TransferRate     int64            `json:"transfer_rate_bps"` // bytes per second
-}
-
-// AccessToken represents API authentication
-type AccessToken struct {
-	BaseModel
-	Token        string     `gorm:"uniqueIndex;not null" json:"-"`
-	Description  string     `json:"description"`
-	Scopes       []string   `gorm:"type:text[]" json:"scopes"`
-	ExpiresAt    *time.Time `json:"expires_at"`
-	LastAccessAt *time.Time `json:"last_access_at"`
+type OrganizationQueueConfig struct {
+	OrganizationName string       `json:"organization_name"`
+	Environment      string       `json:"environment"`
+	ConnectionString string       `json:"connection_string"`
+	QueueRoutes      []QueueRoute `json:"queue_routes"`
 }

@@ -56,6 +56,10 @@ func runServer() error {
 		logger.Warn("Messaging service unavailable, continuing without it")
 		messaging = nil
 	} else {
+		// Initialize queue connections based on routing configuration
+		if err := messaging.InitializeQueues(cfg.QueueRouting.Organizations); err != nil {
+			logger.WithError(err).Warn("Failed to initialize all queue connections")
+		}
 		defer messaging.Close()
 	}
 
@@ -67,8 +71,8 @@ func runServer() error {
 	// Device Management Service
 	deviceManagement := core.NewDeviceManagementService(dataStore, cache, logger)
 
-	// Telemetry Service
-	telemetry := core.NewTelemetryService(dataStore, messaging, logger)
+	// Telemetry Service with Queue Routing
+	telemetry := core.NewTelemetryService(dataStore, messaging, logger, cfg.QueueRouting)
 	defer telemetry.Stop() // Ensure proper shutdown
 
 	// Firmware Management Service
@@ -97,7 +101,7 @@ func runServer() error {
 	}
 
 	// --- MQTT Setup for Telemetry Ingestion ---
-	mqttSubscriber, err := setupMQTTSubscriber(telemetry, logger)
+	mqttSubscriber, err := setupMQTTSubscriber(telemetry, deviceManagement, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed to setup MQTT subscriber")
 		// Continue without MQTT if it fails
@@ -175,7 +179,7 @@ func runServer() error {
 	return nil
 }
 
-func setupMQTTSubscriber(telemetry *core.TelemetryService, logger *logrus.Logger) (*infrastructure.MQTTSubscriber, error) {
+func setupMQTTSubscriber(telemetry *core.TelemetryService, deviceManagement *core.DeviceManagementService, logger *logrus.Logger) (*infrastructure.MQTTSubscriber, error) {
 	if cfg.MQTT == nil || cfg.MQTT.BrokerURL == "" {
 		logger.Info("MQTT configuration not found, skipping MQTT setup")
 		return nil, nil
@@ -198,10 +202,10 @@ func setupMQTTSubscriber(telemetry *core.TelemetryService, logger *logrus.Logger
 
 	// Register telemetry handler
 	subscriber.RegisterHandler("telemetry", func(ctx context.Context, topic string, payload []byte) error {
-		// Parse MQTT message to extract device UID and telemetry
+		// Parse MQTT message to extract device UID and raw telemetry
 		var mqttMsg struct {
 			DeviceUID string          `json:"device_uid"`
-			Telemetry *core.Telemetry `json:"telemetry"`
+			Telemetry json.RawMessage `json:"telemetry"`
 		}
 
 		if err := json.Unmarshal(payload, &mqttMsg); err != nil {
@@ -209,12 +213,23 @@ func setupMQTTSubscriber(telemetry *core.TelemetryService, logger *logrus.Logger
 			return err
 		}
 
-		if mqttMsg.DeviceUID == "" || mqttMsg.Telemetry == nil {
-			return fmt.Errorf("invalid MQTT telemetry message")
+		if mqttMsg.DeviceUID == "" || len(mqttMsg.Telemetry) == 0 {
+			return fmt.Errorf("invalid MQTT telemetry message: missing device_uid or telemetry")
 		}
 
-		// Ingest telemetry
-		return telemetry.IngestTelemetry(ctx, mqttMsg.DeviceUID, mqttMsg.Telemetry)
+		// Get device information
+		device, err := deviceManagement.GetDeviceByUID(ctx, mqttMsg.DeviceUID)
+		if err != nil {
+			logger.WithError(err).WithField("device_uid", mqttMsg.DeviceUID).
+				Error("Device not found for MQTT telemetry")
+			return err
+		}
+
+		// Record heartbeat
+		deviceManagement.RecordHeartbeat(ctx, device.DeviceUID)
+
+		// Ingest telemetry using raw JSON
+		return telemetry.IngestTelemetry(ctx, device, mqttMsg.Telemetry)
 	})
 
 	// Start subscriber

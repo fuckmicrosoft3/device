@@ -23,8 +23,8 @@ redis:
   dial_timeout: 5s
 
 service_bus:
-  connection_string: "" # Add your Azure Service Bus connection string here
-  queue_name: "device-telemetry"
+  connection_string: "" # Not used directly anymore - see queue_routing
+  queue_name: ""        # Not used directly anymore - see queue_routing
   max_retries: 3
   retry_delay: 1s
 
@@ -61,3 +61,70 @@ storage:
   dead_letter_path: "/data/dead_letter"
   backup_path: "/data/backup"
   retention_days: 30
+
+# Queue routing configuration - maps organizations and telemetry types to Azure Service Bus queues
+queue_routing:
+  organizations:
+    # Staging environments
+    - organization_name: "staging.sandbox"
+      environment: "staging"
+      connection_string: "Endpoint=sb://local-test-service.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=kjzSKaOOBytm5Z8cwDZ5NKfQvkSlIBbX1NtLxhBEABY="
+      queue_routes:
+        - queue_name: "novek-staging-erp-messages-devices"
+          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc", "sensors"]
+        - queue_name: "novek-staging-erp-aux-messages-devices"
+          telemetry_types: ["net", "calibrate", "error", "audit_error", "audit_err", "echo", "selection", "mem", "storage_stat", "time", "ue_sysinfo", "settings"]
+        - queue_name: "novek-staging-erp-messages-transactions"
+          telemetry_types: ["prec", "drop", "pay", "subscribe", "refill", "auth-sys", "dispense"]
+        - queue_name: "novek-staging-te-messages-transactions"
+          telemetry_types: ["drop", "prec", "refund", "subscribe"]
+        - queue_name: "novek-staging-cs-messages-canisters-sessions"
+          telemetry_types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]
+
+    - organization_name: "staging.app.ingestor"
+      environment: "staging"
+      connection_string: "Endpoint=sb://staging-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=wpsyvmkLaD7K7I0pkV1jYIfr5D8JnKqiJl94RvsRWp8="
+      queue_routes:
+        - queue_name: "novek-staging-erp-messages-devices"
+          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc", "sensors"]
+        - queue_name: "novek-staging-erp-aux-messages-devices"
+          telemetry_types: ["net", "audit_error", "echo", "selection", "mem", "storage_stat", "time", "ue_sysinfo", "settings", "error"]
+        - queue_name: "novek-staging-erp-messages-transactions"
+          telemetry_types: ["prec", "drop", "pay", "subscribe", "refill", "auth-sys", "dispense"]
+        - queue_name: "novek-staging-te-messages-transactions"
+          telemetry_types: ["drop", "prec", "refund", "subscribe"]
+        - queue_name: "novek-staging-dedicated-sales"
+          telemetry_types: ["prec", "drop", "dispense"]
+        - queue_name: "novek-staging-cs-messages-canisters-sessions"
+          telemetry_types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]
+
+    # Production environments
+    - organization_name: "Nestle Cloud"
+      environment: "production"
+      connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
+      queue_routes:
+        - queue_name: "nestle-production-erp-messages-devices"
+          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc"]
+        - queue_name: "nestle-production-erp-aux-messages-devices"
+          telemetry_types: ["audit_err", "audit_error", "echo", "error", "mem", "net", "time", "ue_sysinfo"]
+        - queue_name: "nestle-production-erp-messages-transactions"
+          telemetry_types: ["prec", "drop", "pay", "subscribe"]
+        - queue_name: "nestle-production-te-messages-transactions"
+          telemetry_types: ["drop", "prec", "refund", "subscribe"]
+
+    - organization_name: "novek.app"
+      environment: "production"
+      connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
+      queue_routes:
+        - queue_name: "novek-production-erp-messages-devices"
+          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc", "sensors"]
+        - queue_name: "novek-production-erp-aux-messages-devices"
+          telemetry_types: ["mem", "error", "calibrate", "net", "selection", "settings", "storage_stat", "time"]
+        - queue_name: "novek-production-erp-messages-transactions"
+          telemetry_types: ["prec", "drop", "pay", "subscribe", "refill", "auth-sys", "dispense"]
+        - queue_name: "novek-production-te-messages-transactions"
+          telemetry_types: ["drop", "prec", "refund", "subscribe"]
+        - queue_name: "novek-production-dedicated-sales"
+          telemetry_types: ["drop", "dispense", "prec"]
+        - queue_name: "novek-production-cs-messages-canisters-sessions"
+          telemetry_types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]
