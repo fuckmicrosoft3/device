@@ -1,65 +1,59 @@
-# ---- Base Stage ----
-# Use a slim, official Go image.
-FROM golang:1.24-alpine as base
+# services/device/Dockerfile
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-# Set the working directory inside the container
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
 WORKDIR /app
 
-# Copy Go modules and download dependencies.
-# This is done in a separate layer to leverage Docker's caching.
+# Copy go mod files
 COPY go.mod go.sum ./
 
-# CORRECTED: Use `go mod tidy` to ensure all transitive dependencies are added to go.sum
-# before the build stage. This resolves the "missing go.sum entry" error.
-RUN go mod tidy
+# Download dependencies
+RUN go mod download
 
-# ---- Dev Stage ----
-# This stage is for development and includes Air for live reloading.
-FROM base as dev
-
-# Install Air for live-reloading
-RUN go install github.com/air-verse/air
-
-# Copy the rest of the application source code
+# Copy source code
 COPY . .
 
-# Expose the port the app runs on
-EXPOSE 8080
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o device-service ./main.go
 
-# The command to start the app with live-reloading
-CMD ["air"]
+# Runtime stage
+FROM alpine:3.18
 
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
 
-# ---- Build Stage ----
-# This stage compiles the application into a single binary.
-FROM base as builder
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Copy the entire source code
-COPY . .
-
-# Build the application, creating a static binary.
-# CGO_ENABLED=0 is important for creating a truly static binary.
-# -ldflags="-w -s" strips debug information to reduce the binary size.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/device-service ./cmd
-
-# ---- Production Stage ----
-# Use a minimal image for the final production container.
-# "scratch" is an empty image, providing the smallest possible attack surface.
-FROM scratch
-
-# Set the working directory
+# Set working directory
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /app/device-service /app/device-service
+# Create data directories
+RUN mkdir -p /data/firmware /data/wal /data/dead_letter /data/backup && \
+    chown -R appuser:appgroup /data
 
-# Copy the configuration file
-COPY --from=builder /app/config/config.yaml /app/config/config.yaml
+# Copy binary from builder
+COPY --from=builder /app/device-service .
 
-# This port must match the one your application listens on
+# Copy config file
+COPY config/config.yaml ./config/
+
+# Change to non-root user
+USER appuser
+
+# Expose port
 EXPOSE 8080
 
-# The command to run the application in production
-ENTRYPOINT ["/app/device-service", "serve", "-c", "/app/config/config.yaml"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+# Run the application
+ENTRYPOINT ["./device-service"]
+CMD ["serve"]
 
 

@@ -1,3 +1,4 @@
+# services/device/config/config.yaml
 # Default configuration for the device service.
 # These values can be overridden by environment variables (e.g., DEVICE_SERVER__PORT=9000).
 server:
@@ -10,15 +11,38 @@ database:
   max_open_conns: 25
   max_idle_conns: 10
   conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  enable_tracing: false
 
 redis:
   addr: "redis:6379"
   password: ""
   db: 0
+  pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5s
 
 service_bus:
   connection_string: "" # Add your Azure Service Bus connection string here
-  queue_name: "device-messages"
+  queue_name: "device-telemetry"
+  max_retries: 3
+  retry_delay: 1s
+
+# MQTT configuration for telemetry ingestion
+mqtt:
+  broker_url: "tcp://mqtt-broker:1883" # Use tls:// for secure connections
+  client_id: "device-service"
+  username: ""
+  password: ""
+  qos: 1
+  clean_session: false
+  topics:
+    - "devices/+/telemetry"      # Single device telemetry
+    - "devices/+/telemetry/batch" # Batch telemetry
+    - "devices/+/status"          # Device status updates
+  keep_alive: 30s
+  connect_timeout: 10s
+  max_reconnect_delay: 2m
 
 firmware:
   storage_path: "/data/firmware"
@@ -31,3 +55,9 @@ ota:
   max_concurrent_updates: 50
   download_timeout: 10m
   retry_attempts: 3
+
+storage:
+  wal_path: "/data/wal"
+  dead_letter_path: "/data/dead_letter"
+  backup_path: "/data/backup"
+  retention_days: 30

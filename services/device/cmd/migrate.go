@@ -23,10 +23,10 @@ var migrateCmd = &cobra.Command{
 		err = db.Migrate(
 			&core.Organization{},
 			&core.Device{},
-			&core.DeviceMessage{},
+			&core.Telemetry{},
 			&core.FirmwareRelease{},
-			&core.OTASession{},
-			&core.APIKey{},
+			&core.UpdateSession{},
+			&core.AccessToken{},
 		)
 		if err != nil {
 			return fmt.Errorf("database migration failed: %w", err)

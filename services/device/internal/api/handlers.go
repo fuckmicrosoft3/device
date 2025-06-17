@@ -1,3 +1,4 @@
+// services/device/internal/api/handlers.go
 package api
 
 import (
@@ -10,14 +11,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// APIHandlers holds all HTTP handlers
+// APIHandlers holds all HTTP handlers with concrete service types
 type APIHandlers struct {
-	services *core.ServiceRegistry
+	deviceManagement   *core.DeviceManagementService
+	telemetry          *core.TelemetryService
+	firmwareManagement *core.FirmwareManagementService
+	updateManagement   *core.UpdateManagementService
+	organization       *core.OrganizationService
+	authentication     *core.AuthenticationService
 }
 
-// NewAPIHandlers creates a new handler instance
+// NewAPIHandlers creates a new handler instance with the service registry
 func NewAPIHandlers(services *core.ServiceRegistry) *APIHandlers {
-	return &APIHandlers{services: services}
+	return &APIHandlers{
+		deviceManagement:   services.DeviceManagement.(*core.DeviceManagementService),
+		telemetry:          services.Telemetry.(*core.TelemetryService),
+		firmwareManagement: services.FirmwareManagement.(*core.FirmwareManagementService),
+		updateManagement:   services.UpdateManagement.(*core.UpdateManagementService),
+		organization:       services.Organization.(*core.OrganizationService),
+		authentication:     services.Authentication.(*core.AuthenticationService),
+	}
 }
 
 // HealthCheck returns service health status
@@ -39,7 +52,7 @@ func (h *APIHandlers) RegisterDevice(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.DeviceManagement.RegisterDevice(c.Request.Context(), &device); err != nil {
+	if err := h.deviceManagement.RegisterDevice(c.Request.Context(), &device); err != nil {
 		switch err {
 		case core.ErrDeviceAlreadyExists:
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -62,7 +75,7 @@ func (h *APIHandlers) GetDevice(c *gin.Context) {
 		return
 	}
 
-	device, err := h.services.DeviceManagement.GetDevice(c.Request.Context(), uint(id))
+	device, err := h.deviceManagement.GetDevice(c.Request.Context(), uint(id))
 	if err != nil {
 		if err == core.ErrDeviceNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -83,7 +96,7 @@ func (h *APIHandlers) ListDevices(c *gin.Context) {
 		return
 	}
 
-	devices, err := h.services.DeviceManagement.ListOrganizationDevices(c.Request.Context(), uint(orgID))
+	devices, err := h.deviceManagement.ListOrganizationDevices(c.Request.Context(), uint(orgID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list devices"})
 		return
@@ -111,7 +124,7 @@ func (h *APIHandlers) UpdateDeviceStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.DeviceManagement.UpdateDeviceStatus(c.Request.Context(), uint(id), req.Active); err != nil {
+	if err := h.deviceManagement.UpdateDeviceStatus(c.Request.Context(), uint(id), req.Active); err != nil {
 		if err == core.ErrDeviceNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
@@ -125,7 +138,7 @@ func (h *APIHandlers) UpdateDeviceStatus(c *gin.Context) {
 
 // --- Telemetry Endpoints ---
 
-// IngestTelemetry receives device telemetry data
+// IngestTelemetry receives device telemetry data via HTTP
 func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 	var telemetry core.Telemetry
 	if err := c.ShouldBindJSON(&telemetry); err != nil {
@@ -143,9 +156,9 @@ func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 	deviceUID := device.(*core.Device).DeviceUID
 
 	// Record heartbeat
-	h.services.DeviceManagement.RecordHeartbeat(c.Request.Context(), deviceUID)
+	h.deviceManagement.RecordHeartbeat(c.Request.Context(), deviceUID)
 
-	if err := h.services.Telemetry.IngestTelemetry(c.Request.Context(), deviceUID, &telemetry); err != nil {
+	if err := h.telemetry.IngestTelemetry(c.Request.Context(), deviceUID, &telemetry); err != nil {
 		switch err {
 		case core.ErrDeviceNotFound:
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -163,7 +176,7 @@ func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 	})
 }
 
-// IngestBatchTelemetry receives multiple telemetry messages
+// IngestBatchTelemetry receives multiple telemetry messages via HTTP
 func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 	var req struct {
 		Messages []*core.Telemetry `json:"messages"`
@@ -178,7 +191,7 @@ func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.Telemetry.IngestBatch(c.Request.Context(), req.Messages); err != nil {
+	if err := h.telemetry.IngestBatch(c.Request.Context(), req.Messages); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process batch"})
 		return
 	}
@@ -202,7 +215,7 @@ func (h *APIHandlers) GetDeviceTelemetry(c *gin.Context) {
 		limit = 100
 	}
 
-	telemetry, err := h.services.Telemetry.GetDeviceTelemetry(c.Request.Context(), uint(deviceID), limit)
+	telemetry, err := h.telemetry.GetDeviceTelemetry(c.Request.Context(), uint(deviceID), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get telemetry"})
 		return
@@ -224,7 +237,7 @@ func (h *APIHandlers) CreateOrganization(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.Organization.CreateOrganization(c.Request.Context(), &org); err != nil {
+	if err := h.organization.CreateOrganization(c.Request.Context(), &org); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create organization"})
 		return
 	}
@@ -234,7 +247,7 @@ func (h *APIHandlers) CreateOrganization(c *gin.Context) {
 
 // ListOrganizations returns all organizations
 func (h *APIHandlers) ListOrganizations(c *gin.Context) {
-	orgs, err := h.services.Organization.ListOrganizations(c.Request.Context())
+	orgs, err := h.organization.ListOrganizations(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list organizations"})
 		return
@@ -277,7 +290,7 @@ func (h *APIHandlers) UploadFirmware(c *gin.Context) {
 		return
 	}
 
-	firmware, err := h.services.FirmwareManagement.CreateRelease(c.Request.Context(), data, metadata)
+	firmware, err := h.firmwareManagement.CreateRelease(c.Request.Context(), data, metadata)
 	if err != nil {
 		if businessErr, ok := err.(core.BusinessError); ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Error()})
@@ -294,7 +307,7 @@ func (h *APIHandlers) UploadFirmware(c *gin.Context) {
 func (h *APIHandlers) ListFirmwareReleases(c *gin.Context) {
 	channel := c.Query("channel")
 
-	releases, err := h.services.FirmwareManagement.ListReleases(c.Request.Context(), channel)
+	releases, err := h.firmwareManagement.ListReleases(c.Request.Context(), channel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list releases"})
 		return
@@ -342,7 +355,7 @@ func (h *APIHandlers) PromoteFirmwareRelease(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.FirmwareManagement.PromoteRelease(c.Request.Context(), uint(id), req.Status); err != nil {
+	if err := h.firmwareManagement.PromoteRelease(c.Request.Context(), uint(id), req.Status); err != nil {
 		if businessErr, ok := err.(core.BusinessError); ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Error()})
 		} else {
@@ -366,7 +379,7 @@ func (h *APIHandlers) CheckForUpdates(c *gin.Context) {
 		return
 	}
 
-	session, err := h.services.UpdateManagement.CheckForUpdates(c.Request.Context(), deviceUID, currentVersion)
+	session, err := h.updateManagement.CheckForUpdates(c.Request.Context(), deviceUID, currentVersion)
 	if err != nil {
 		if err == core.ErrDeviceNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -400,7 +413,7 @@ func (h *APIHandlers) DownloadFirmwareChunk(c *gin.Context) {
 		size = 32768 // Default 32KB
 	}
 
-	chunk, err := h.services.UpdateManagement.DownloadFirmwareChunk(c.Request.Context(), sessionID, offset, size)
+	chunk, err := h.updateManagement.DownloadFirmwareChunk(c.Request.Context(), sessionID, offset, size)
 	if err != nil {
 		if businessErr, ok := err.(core.BusinessError); ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Error()})
@@ -430,7 +443,7 @@ func (h *APIHandlers) CompleteUpdate(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.UpdateManagement.CompleteUpdate(c.Request.Context(), sessionID, req.Checksum); err != nil {
+	if err := h.updateManagement.CompleteUpdate(c.Request.Context(), sessionID, req.Checksum); err != nil {
 		switch err {
 		case core.ErrChecksumMismatch:
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -448,8 +461,8 @@ func (h *APIHandlers) CompleteUpdate(c *gin.Context) {
 // GetSystemStats returns system statistics
 func (h *APIHandlers) GetSystemStats(c *gin.Context) {
 	stats := gin.H{
-		"telemetry": h.services.Telemetry.GetIngestionStats(),
-		"updates":   h.services.UpdateManagement.GetUpdateMetrics(),
+		"telemetry": h.telemetry.GetIngestionStats(),
+		"updates":   h.updateManagement.GetUpdateMetrics(),
 		"timestamp": time.Now(),
 	}
 

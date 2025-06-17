@@ -1,51 +1,89 @@
+# services/device/docker-compose.yml
 version: '3.8'
 
 services:
-  # The application service (for development)
-  app:
-    build:
-      context: .
-      target: dev # Use the 'dev' stage from the Dockerfile
-    container_name: device_service_dev
-    ports:
-      - "8080:8080" # Map host port to container port
-    volumes:
-      - .:/app # Mount the current directory into the container for live-reloading
-    depends_on:
-      - db
-      - redis
-    environment:
-      # Override config values for the Docker environment
-      - DEVICE_DATABASE__DSN=host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable
-      - DEVICE_REDIS__ADDR=redis:6379
-
-  # PostgreSQL database service
   db:
-    image: postgres:14-alpine
-    container_name: device_db
-    ports:
-      - "5433:5432" # Expose the DB port to the host for local debugging
-    volumes:
-      - postgres_data:/var/lib/postgresql/data # Persist database data
+    image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=device_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: device_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d device_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis service
   redis:
-    image: redis:6-alpine
-    container_name: device_redis
+    image: redis:7-alpine
     ports:
-      - "6380:6379" # Expose Redis port to the host
+      - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-u", "health", "-P", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  device-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DEVICE_DATABASE__DSN: "host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable"
+      DEVICE_REDIS__ADDR: "redis:6379"
+      DEVICE_MQTT__BROKER_URL: "tcp://mqtt-broker:1883"
+      DEVICE_STORAGE__WAL_PATH: "/data/wal"
+      DEVICE_STORAGE__DEAD_LETTER_PATH: "/data/dead_letter"
+      DEVICE_FIRMWARE__STORAGE_PATH: "/data/firmware"
+    volumes:
+      - device_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt-broker:
+        condition: service_healthy
+    command: ["./device-service", "serve"]
+
+  # Optional: MQTT Explorer for debugging
+  mqtt-explorer:
+    image: smeagolworms4/mqtt-explorer
+    ports:
+      - "4000:4000"
+    environment:
+      HTTP_PORT: 4000
+      MQTT_BROKER_URL: mqtt-broker
+      MQTT_BROKER_PORT: 1883
+    depends_on:
+      - mqtt-broker
 
 volumes:
   postgres_data:
   redis_data:
+  mosquitto_data:
+  mosquitto_log:
+  device_data:

@@ -1,7 +1,9 @@
+// services/device/cmd/serve.go
 package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,13 +15,14 @@ import (
 	"example.com/backstage/services/device/internal/core"
 	"example.com/backstage/services/device/internal/infrastructure"
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Starts the Device Management API server",
-	Long:  `Launches the HTTP server to handle device registration, telemetry ingestion, and OTA updates.`,
+	Long:  `Launches the HTTP server and MQTT client to handle device registration, telemetry ingestion, and OTA updates.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServer()
 	},
@@ -56,21 +59,51 @@ func runServer() error {
 		defer messaging.Close()
 	}
 
-	// --- Service Layer Setup ---
+	// --- Data Store Setup ---
 	dataStore := core.NewDataStore(db.DB)
 
-	serviceConfig := core.ServiceConfig{
-		DataStore:      dataStore,
-		Cache:          cache,
-		Messaging:      messaging,
-		Logger:         logger,
-		FirmwareConfig: cfg.Firmware,
-		OTAConfig:      cfg.OTA,
+	// --- Individual Service Initialization ---
+
+	// Device Management Service
+	deviceManagement := core.NewDeviceManagementService(dataStore, cache, logger)
+
+	// Telemetry Service
+	telemetry := core.NewTelemetryService(dataStore, messaging, logger)
+	defer telemetry.Stop() // Ensure proper shutdown
+
+	// Firmware Management Service
+	firmwareManagement, err := core.NewFirmwareManagementService(dataStore, logger, cfg.Firmware)
+	if err != nil {
+		return fmt.Errorf("failed to initialize firmware service: %w", err)
 	}
 
-	services, err := core.NewServiceRegistry(serviceConfig)
+	// Update Management Service
+	updateManagement := core.NewUpdateManagementService(dataStore, firmwareManagement, logger, cfg.OTA)
+
+	// Organization Service
+	organization := core.NewOrganizationService(dataStore, logger)
+
+	// Authentication Service
+	authentication := core.NewAuthenticationService(dataStore, logger)
+
+	// Create service registry for API handlers
+	services := &core.ServiceRegistry{
+		DeviceManagement:   deviceManagement,
+		Telemetry:          telemetry,
+		FirmwareManagement: firmwareManagement,
+		UpdateManagement:   updateManagement,
+		Organization:       organization,
+		Authentication:     authentication,
+	}
+
+	// --- MQTT Setup for Telemetry Ingestion ---
+	mqttSubscriber, err := setupMQTTSubscriber(telemetry, logger)
 	if err != nil {
-		return fmt.Errorf("failed to initialize services: %w", err)
+		logger.WithError(err).Error("Failed to setup MQTT subscriber")
+		// Continue without MQTT if it fails
+		mqttSubscriber = nil
+	} else {
+		defer mqttSubscriber.Stop()
 	}
 
 	// --- API Layer Setup ---
@@ -112,23 +145,83 @@ func runServer() error {
 
 	logger.Warn("Shutdown signal received, initiating graceful shutdown...")
 
-	// Shutdown telemetry processor first
-	if services.Telemetry != nil {
-		if telemetryImpl, ok := services.Telemetry.(*telemetryService); ok {
-			telemetryImpl.processor.Stop()
-		}
-	}
-
-	// Shutdown HTTP server
+	// Create shutdown context
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Shutdown order is important
+
+	// 1. Stop accepting new MQTT messages
+	if mqttSubscriber != nil {
+		logger.Info("Stopping MQTT subscriber...")
+		mqttSubscriber.Stop()
+	}
+
+	// 2. Stop telemetry processor
+	logger.Info("Stopping telemetry processor...")
+	telemetry.Stop()
+
+	// 3. Shutdown HTTP server
+	logger.Info("Shutting down HTTP server...")
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Errorf("Server shutdown failed: %v", err)
 	} else {
 		logger.Info("Server stopped gracefully")
 	}
 
+	// 4. Close infrastructure connections (deferred above)
+
 	logger.Info("Device Management Service shutdown complete")
 	return nil
+}
+
+func setupMQTTSubscriber(telemetry *core.TelemetryService, logger *logrus.Logger) (*infrastructure.MQTTSubscriber, error) {
+	if cfg.MQTT == nil || cfg.MQTT.BrokerURL == "" {
+		logger.Info("MQTT configuration not found, skipping MQTT setup")
+		return nil, nil
+	}
+
+	mqttConfig := infrastructure.MQTTConfig{
+		BrokerURL:    cfg.MQTT.BrokerURL,
+		ClientID:     cfg.MQTT.ClientID,
+		Username:     cfg.MQTT.Username,
+		Password:     cfg.MQTT.Password,
+		QoS:          cfg.MQTT.QoS,
+		CleanSession: cfg.MQTT.CleanSession,
+		Topics:       cfg.MQTT.Topics,
+	}
+
+	subscriber, err := infrastructure.NewMQTTSubscriber(mqttConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MQTT subscriber: %w", err)
+	}
+
+	// Register telemetry handler
+	subscriber.RegisterHandler("telemetry", func(ctx context.Context, topic string, payload []byte) error {
+		// Parse MQTT message to extract device UID and telemetry
+		var mqttMsg struct {
+			DeviceUID string          `json:"device_uid"`
+			Telemetry *core.Telemetry `json:"telemetry"`
+		}
+
+		if err := json.Unmarshal(payload, &mqttMsg); err != nil {
+			logger.WithError(err).Error("Failed to unmarshal MQTT telemetry")
+			return err
+		}
+
+		if mqttMsg.DeviceUID == "" || mqttMsg.Telemetry == nil {
+			return fmt.Errorf("invalid MQTT telemetry message")
+		}
+
+		// Ingest telemetry
+		return telemetry.IngestTelemetry(ctx, mqttMsg.DeviceUID, mqttMsg.Telemetry)
+	})
+
+	// Start subscriber
+	if err := subscriber.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start MQTT subscriber: %w", err)
+	}
+
+	logger.Info("MQTT subscriber started successfully")
+	return subscriber, nil
 }

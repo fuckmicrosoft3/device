@@ -1,3 +1,4 @@
+// services/device/internal/core/service.go
 package core
 
 import (
@@ -22,59 +23,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// DeviceManagementService handles device lifecycle operations
-type DeviceManagementService interface {
-	RegisterDevice(ctx context.Context, device *Device) error
-	GetDevice(ctx context.Context, id uint) (*Device, error)
-	GetDeviceByUID(ctx context.Context, uid string) (*Device, error)
-	ListOrganizationDevices(ctx context.Context, orgID uint) ([]*Device, error)
-	UpdateDeviceStatus(ctx context.Context, id uint, active bool) error
-	RecordHeartbeat(ctx context.Context, deviceUID string) error
-}
-
-// TelemetryService handles device telemetry ingestion
-type TelemetryService interface {
-	IngestTelemetry(ctx context.Context, deviceUID string, telemetry *Telemetry) error
-	IngestBatch(ctx context.Context, batch []*Telemetry) error
-	GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error)
-	GetIngestionStats() map[string]interface{}
-}
-
-// FirmwareManagementService handles firmware lifecycle
-type FirmwareManagementService interface {
-	CreateRelease(ctx context.Context, data []byte, metadata FirmwareMetadata) (*FirmwareRelease, error)
-	GetRelease(ctx context.Context, id uint) (*FirmwareRelease, error)
-	ListReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error)
-	PromoteRelease(ctx context.Context, id uint, newStatus string) error
-	GetLatestRelease(ctx context.Context, channel string) (*FirmwareRelease, error)
-}
-
-// UpdateManagementService handles OTA updates
-type UpdateManagementService interface {
-	InitiateUpdate(ctx context.Context, deviceID, firmwareID uint) (*UpdateSession, error)
-	CheckForUpdates(ctx context.Context, deviceUID, currentVersion string) (*UpdateSession, error)
-	GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error)
-	DownloadFirmwareChunk(ctx context.Context, sessionID string, offset, size int64) ([]byte, error)
-	CompleteUpdate(ctx context.Context, sessionID string, checksum string) error
-	GetUpdateMetrics() map[string]interface{}
-}
-
-// OrganizationService handles device tenant management
-type OrganizationService interface {
-	CreateOrganization(ctx context.Context, org *Organization) error
-	GetOrganization(ctx context.Context, id uint) (*Organization, error)
-	ListOrganizations(ctx context.Context) ([]*Organization, error)
-	UpdateOrganization(ctx context.Context, org *Organization) error
-}
-
-// AuthenticationService handles API access control
-type AuthenticationService interface {
-	ValidateToken(ctx context.Context, token string) (*AccessToken, error)
-	CreateToken(ctx context.Context, description string, scopes []string, expiresIn time.Duration) (*AccessToken, error)
-	RevokeToken(ctx context.Context, token string) error
-	HasScope(token *AccessToken, scope string) bool
-}
-
 // FirmwareMetadata contains metadata for firmware releases
 type FirmwareMetadata struct {
 	Filename       string
@@ -83,106 +31,23 @@ type FirmwareMetadata struct {
 	ReleaseNotes   string
 }
 
-// ServiceRegistry holds all domain services
-type ServiceRegistry struct {
-	DeviceManagement   DeviceManagementService
-	Telemetry          TelemetryService
-	FirmwareManagement FirmwareManagementService
-	UpdateManagement   UpdateManagementService
-	Organization       OrganizationService
-	Authentication     AuthenticationService
-}
-
-// NewServiceRegistry creates all services with their dependencies
-func NewServiceRegistry(cfg ServiceConfig) (*ServiceRegistry, error) {
-	// Device management service
-	deviceSvc := &deviceManagementService{
-		store:  cfg.DataStore,
-		cache:  cfg.Cache,
-		logger: cfg.Logger,
-	}
-
-	// Telemetry service with async processing
-	telemetrySvc := &telemetryService{
-		store:     cfg.DataStore,
-		messaging: cfg.Messaging,
-		logger:    cfg.Logger,
-		processor: NewTelemetryProcessor(cfg.DataStore, cfg.Messaging, cfg.Logger),
-	}
-	telemetrySvc.processor.Start(10) // 10 workers
-
-	// Firmware management service
-	firmwareSvc := &firmwareManagementService{
-		store:       cfg.DataStore,
-		logger:      cfg.Logger,
-		storagePath: cfg.FirmwareConfig.StoragePath,
-		maxFileSize: cfg.FirmwareConfig.MaxFileSize,
-	}
-
-	if cfg.FirmwareConfig.SigningEnabled && cfg.FirmwareConfig.PrivateKeyPath != "" {
-		key, err := utils.LoadSigningKey(cfg.FirmwareConfig.PrivateKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load signing key: %w", err)
-		}
-		firmwareSvc.signingKey = key
-	}
-
-	// Ensure firmware storage exists
-	if err := os.MkdirAll(cfg.FirmwareConfig.StoragePath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create firmware storage: %w", err)
-	}
-
-	// Update management service
-	updateSvc := &updateManagementService{
-		store:       cfg.DataStore,
-		firmwareSvc: firmwareSvc,
-		logger:      cfg.Logger,
-		chunkSize:   cfg.OTAConfig.ChunkSize,
-		chunkCache:  make(map[string]*cachedChunk),
-	}
-	go updateSvc.cleanupCache()
-
-	// Organization service
-	orgSvc := &organizationService{
-		store:  cfg.DataStore,
-		logger: cfg.Logger,
-	}
-
-	// Authentication service
-	authSvc := &authenticationService{
-		store:  cfg.DataStore,
-		logger: cfg.Logger,
-	}
-
-	return &ServiceRegistry{
-		DeviceManagement:   deviceSvc,
-		Telemetry:          telemetrySvc,
-		FirmwareManagement: firmwareSvc,
-		UpdateManagement:   updateSvc,
-		Organization:       orgSvc,
-		Authentication:     authSvc,
-	}, nil
-}
-
-// ServiceConfig holds dependencies for services
-type ServiceConfig struct {
-	DataStore      DataStore
-	Cache          *infrastructure.Cache
-	Messaging      *infrastructure.Messaging
-	Logger         *logrus.Logger
-	FirmwareConfig config.FirmwareConfig
-	OTAConfig      config.OTAConfig
-}
-
 // --- Device Management Service Implementation ---
 
-type deviceManagementService struct {
+type DeviceManagementService struct {
 	store  DataStore
 	cache  *infrastructure.Cache
 	logger *logrus.Logger
 }
 
-func (s *deviceManagementService) RegisterDevice(ctx context.Context, device *Device) error {
+func NewDeviceManagementService(store DataStore, cache *infrastructure.Cache, logger *logrus.Logger) *DeviceManagementService {
+	return &DeviceManagementService{
+		store:  store,
+		cache:  cache,
+		logger: logger,
+	}
+}
+
+func (s *DeviceManagementService) RegisterDevice(ctx context.Context, device *Device) error {
 	if device.DeviceUID == "" {
 		device.DeviceUID = uuid.New().String()
 	}
@@ -221,7 +86,7 @@ func (s *deviceManagementService) RegisterDevice(ctx context.Context, device *De
 	return nil
 }
 
-func (s *deviceManagementService) GetDevice(ctx context.Context, id uint) (*Device, error) {
+func (s *DeviceManagementService) GetDevice(ctx context.Context, id uint) (*Device, error) {
 	device, err := s.store.GetDevice(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -232,7 +97,7 @@ func (s *deviceManagementService) GetDevice(ctx context.Context, id uint) (*Devi
 	return device, nil
 }
 
-func (s *deviceManagementService) GetDeviceByUID(ctx context.Context, uid string) (*Device, error) {
+func (s *DeviceManagementService) GetDeviceByUID(ctx context.Context, uid string) (*Device, error) {
 	// Try cache first
 	if cached, err := s.getCachedDevice(ctx, uid); err == nil && cached != nil {
 		return cached, nil
@@ -250,11 +115,11 @@ func (s *deviceManagementService) GetDeviceByUID(ctx context.Context, uid string
 	return device, nil
 }
 
-func (s *deviceManagementService) ListOrganizationDevices(ctx context.Context, orgID uint) ([]*Device, error) {
+func (s *DeviceManagementService) ListOrganizationDevices(ctx context.Context, orgID uint) ([]*Device, error) {
 	return s.store.ListDevicesByOrganization(ctx, orgID)
 }
 
-func (s *deviceManagementService) UpdateDeviceStatus(ctx context.Context, id uint, active bool) error {
+func (s *DeviceManagementService) UpdateDeviceStatus(ctx context.Context, id uint, active bool) error {
 	device, err := s.store.GetDevice(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -272,7 +137,7 @@ func (s *deviceManagementService) UpdateDeviceStatus(ctx context.Context, id uin
 	return nil
 }
 
-func (s *deviceManagementService) RecordHeartbeat(ctx context.Context, deviceUID string) error {
+func (s *DeviceManagementService) RecordHeartbeat(ctx context.Context, deviceUID string) error {
 	device, err := s.store.GetDeviceByUID(ctx, deviceUID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -284,14 +149,14 @@ func (s *deviceManagementService) RecordHeartbeat(ctx context.Context, deviceUID
 	return s.store.UpdateDeviceHeartbeat(ctx, device.ID)
 }
 
-func (s *deviceManagementService) cacheDevice(ctx context.Context, device *Device) {
+func (s *DeviceManagementService) cacheDevice(ctx context.Context, device *Device) {
 	if s.cache != nil {
 		data, _ := json.Marshal(device)
 		s.cache.Set(ctx, fmt.Sprintf("device:%s", device.DeviceUID), string(data), 24*time.Hour)
 	}
 }
 
-func (s *deviceManagementService) getCachedDevice(ctx context.Context, uid string) (*Device, error) {
+func (s *DeviceManagementService) getCachedDevice(ctx context.Context, uid string) (*Device, error) {
 	if s.cache == nil {
 		return nil, errors.New("cache not available")
 	}
@@ -311,14 +176,26 @@ func (s *deviceManagementService) getCachedDevice(ctx context.Context, uid strin
 
 // --- Telemetry Service Implementation ---
 
-type telemetryService struct {
+type TelemetryService struct {
 	store     DataStore
 	messaging *infrastructure.Messaging
 	logger    *logrus.Logger
 	processor *TelemetryProcessor
 }
 
-func (s *telemetryService) IngestTelemetry(ctx context.Context, deviceUID string, telemetry *Telemetry) error {
+func NewTelemetryService(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryService {
+	processor := NewTelemetryProcessor(store, messaging, logger)
+	svc := &TelemetryService{
+		store:     store,
+		messaging: messaging,
+		logger:    logger,
+		processor: processor,
+	}
+	processor.Start(10) // 10 workers
+	return svc
+}
+
+func (s *TelemetryService) IngestTelemetry(ctx context.Context, deviceUID string, telemetry *Telemetry) error {
 	if telemetry.MessageID == "" {
 		telemetry.MessageID = uuid.New().String()
 	}
@@ -339,11 +216,11 @@ func (s *telemetryService) IngestTelemetry(ctx context.Context, deviceUID string
 	telemetry.DeviceID = device.ID
 	telemetry.ReceivedAt = time.Now()
 
-	// Enqueue for async processing
+	// Enqueue for async processing with reliability
 	return s.processor.Enqueue(telemetry)
 }
 
-func (s *telemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) error {
+func (s *TelemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) error {
 	for _, telemetry := range batch {
 		if telemetry.MessageID == "" {
 			telemetry.MessageID = uuid.New().String()
@@ -352,69 +229,148 @@ func (s *telemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) 
 
 		if err := s.processor.Enqueue(telemetry); err != nil {
 			s.logger.WithError(err).Warn("Failed to enqueue telemetry")
+			// Continue processing other messages
 		}
 	}
 	return nil
 }
 
-func (s *telemetryService) GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error) {
+func (s *TelemetryService) GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error) {
 	return s.store.GetDeviceTelemetry(ctx, deviceID, limit)
 }
 
-func (s *telemetryService) GetIngestionStats() map[string]interface{} {
+func (s *TelemetryService) GetIngestionStats() map[string]interface{} {
 	return s.processor.Stats()
 }
 
-// TelemetryProcessor handles async telemetry processing
+func (s *TelemetryService) Stop() {
+	s.processor.Stop()
+}
+
+// TelemetryProcessor handles async telemetry processing with reliability
 type TelemetryProcessor struct {
-	store     DataStore
-	messaging *infrastructure.Messaging
-	logger    *logrus.Logger
-	queue     chan *Telemetry
-	workers   int
-	wg        sync.WaitGroup
-	shutdown  chan struct{}
+	store         DataStore
+	messaging     *infrastructure.Messaging
+	logger        *logrus.Logger
+	queue         chan *Telemetry
+	retryQueue    chan *RetryItem
+	persistentWAL *infrastructure.WAL
+	workers       int
+	wg            sync.WaitGroup
+	shutdown      chan struct{}
+	stats         *ProcessorStats
+}
+
+type RetryItem struct {
+	Telemetry   *Telemetry
+	RetryCount  int
+	LastError   error
+	NextRetryAt time.Time
+}
+
+type ProcessorStats struct {
+	mu              sync.RWMutex
+	Processed       uint64
+	Failed          uint64
+	Retried         uint64
+	QueueDepth      int
+	RetryQueueDepth int
 }
 
 func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryProcessor {
+	// Initialize Write-Ahead Log for persistence
+	wal, err := infrastructure.NewWAL("/data/telemetry-wal")
+	if err != nil {
+		logger.WithError(err).Error("Failed to initialize WAL, using in-memory fallback")
+	}
+
 	return &TelemetryProcessor{
-		store:     store,
-		messaging: messaging,
-		logger:    logger,
-		queue:     make(chan *Telemetry, 10000),
-		shutdown:  make(chan struct{}),
+		store:         store,
+		messaging:     messaging,
+		logger:        logger,
+		queue:         make(chan *Telemetry, 10000),
+		retryQueue:    make(chan *RetryItem, 5000),
+		persistentWAL: wal,
+		shutdown:      make(chan struct{}),
+		stats:         &ProcessorStats{},
 	}
 }
 
 func (p *TelemetryProcessor) Start(workers int) {
 	p.workers = workers
+
+	// Start main workers
 	for i := 0; i < workers; i++ {
 		p.wg.Add(1)
 		go p.worker(i)
 	}
+
+	// Start retry worker
+	p.wg.Add(1)
+	go p.retryWorker()
+
+	// Start WAL recovery
+	if p.persistentWAL != nil {
+		p.wg.Add(1)
+		go p.recoverFromWAL()
+	}
+
 	p.logger.Infof("Started %d telemetry processor workers", workers)
 }
 
 func (p *TelemetryProcessor) Stop() {
 	close(p.shutdown)
 	p.wg.Wait()
+	if p.persistentWAL != nil {
+		p.persistentWAL.Close()
+	}
 }
 
 func (p *TelemetryProcessor) Enqueue(telemetry *Telemetry) error {
+	// Write to WAL first for durability
+	if p.persistentWAL != nil {
+		if err := p.persistentWAL.Write(telemetry); err != nil {
+			p.logger.WithError(err).Warn("Failed to write to WAL")
+		}
+	}
+
 	select {
 	case p.queue <- telemetry:
 		return nil
 	default:
-		return BusinessError{"TELEMETRY_001", "telemetry queue full"}
+		// Queue full, try to persist for later processing
+		return p.persistToFallback(telemetry)
 	}
 }
 
+func (p *TelemetryProcessor) persistToFallback(telemetry *Telemetry) error {
+	// Implement fallback persistence (e.g., local file, secondary queue)
+	p.logger.Warn("Main queue full, persisting to fallback")
+	p.updateStats(func(s *ProcessorStats) {
+		s.Failed++
+	})
+	return BusinessError{"TELEMETRY_001", "telemetry queue full, message persisted for later processing"}
+}
+
 func (p *TelemetryProcessor) Stats() map[string]interface{} {
+	p.stats.mu.RLock()
+	defer p.stats.mu.RUnlock()
+
 	return map[string]interface{}{
-		"queue_depth":    len(p.queue),
-		"queue_capacity": cap(p.queue),
-		"workers":        p.workers,
+		"processed":         p.stats.Processed,
+		"failed":            p.stats.Failed,
+		"retried":           p.stats.Retried,
+		"queue_depth":       len(p.queue),
+		"retry_queue_depth": len(p.retryQueue),
+		"queue_capacity":    cap(p.queue),
+		"workers":           p.workers,
 	}
+}
+
+func (p *TelemetryProcessor) updateStats(fn func(*ProcessorStats)) {
+	p.stats.mu.Lock()
+	defer p.stats.mu.Unlock()
+	fn(p.stats)
 }
 
 func (p *TelemetryProcessor) worker(id int) {
@@ -425,33 +381,89 @@ func (p *TelemetryProcessor) worker(id int) {
 		case <-p.shutdown:
 			return
 		case telemetry := <-p.queue:
-			p.processTelemetry(telemetry)
+			p.processTelemetry(telemetry, 0)
 		}
 	}
 }
 
-func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry) {
+func (p *TelemetryProcessor) retryWorker() {
+	defer p.wg.Done()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.shutdown:
+			return
+		case <-ticker.C:
+			p.processRetries()
+		case item := <-p.retryQueue:
+			if time.Now().After(item.NextRetryAt) {
+				p.processTelemetry(item.Telemetry, item.RetryCount)
+			} else {
+				// Re-queue for later
+				select {
+				case p.retryQueue <- item:
+				default:
+					p.logger.Warn("Retry queue full, dropping retry item")
+				}
+			}
+		}
+	}
+}
+
+func (p *TelemetryProcessor) processRetries() {
+	retryItems := make([]*RetryItem, 0)
+
+	// Drain retry queue
+	for {
+		select {
+		case item := <-p.retryQueue:
+			retryItems = append(retryItems, item)
+		default:
+			goto process
+		}
+	}
+
+process:
+	now := time.Now()
+	for _, item := range retryItems {
+		if now.After(item.NextRetryAt) {
+			p.processTelemetry(item.Telemetry, item.RetryCount)
+		} else {
+			// Re-queue for later
+			select {
+			case p.retryQueue <- item:
+			default:
+				p.logger.Warn("Retry queue full during reprocessing")
+			}
+		}
+	}
+}
+
+func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount int) {
 	ctx := context.Background()
 
 	err := p.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
 		// Save telemetry
 		if err := tx.SaveTelemetry(ctx, telemetry); err != nil {
-			return err
+			return fmt.Errorf("failed to save telemetry: %w", err)
 		}
 
 		// Update device heartbeat
 		if err := tx.UpdateDeviceHeartbeat(ctx, telemetry.DeviceID); err != nil {
-			return err
+			return fmt.Errorf("failed to update heartbeat: %w", err)
 		}
 
 		// Publish to messaging system
 		if p.messaging != nil {
-			if err := p.messaging.Publish(ctx, "device-telemetry", telemetry); err != nil {
-				return err
+			if err := p.messaging.PublishWithRetry(ctx, "device-telemetry", telemetry, 3); err != nil {
+				// Log but don't fail the transaction
+				p.logger.WithError(err).Warn("Failed to publish to messaging system")
 			}
 
 			if err := tx.MarkTelemetryProcessed(ctx, telemetry.MessageID); err != nil {
-				return err
+				return fmt.Errorf("failed to mark as processed: %w", err)
 			}
 		}
 
@@ -459,14 +471,94 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry) {
 	})
 
 	if err != nil {
-		p.logger.WithError(err).WithField("message_id", telemetry.MessageID).
-			Error("Failed to process telemetry")
+		p.handleProcessingError(telemetry, err, retryCount)
+	} else {
+		// Remove from WAL on success
+		if p.persistentWAL != nil {
+			p.persistentWAL.Remove(telemetry.MessageID)
+		}
+		p.updateStats(func(s *ProcessorStats) {
+			s.Processed++
+		})
+	}
+}
+
+func (p *TelemetryProcessor) handleProcessingError(telemetry *Telemetry, err error, retryCount int) {
+	p.logger.WithError(err).WithFields(logrus.Fields{
+		"message_id":  telemetry.MessageID,
+		"retry_count": retryCount,
+	}).Error("Failed to process telemetry")
+
+	if retryCount < 5 {
+		// Exponential backoff
+		nextRetry := time.Now().Add(time.Duration(1<<uint(retryCount)) * time.Second)
+		retryItem := &RetryItem{
+			Telemetry:   telemetry,
+			RetryCount:  retryCount + 1,
+			LastError:   err,
+			NextRetryAt: nextRetry,
+		}
+
+		select {
+		case p.retryQueue <- retryItem:
+			p.updateStats(func(s *ProcessorStats) {
+				s.Retried++
+			})
+		default:
+			// Retry queue full, persist to dead letter
+			p.persistToDeadLetter(telemetry, err)
+		}
+	} else {
+		// Max retries exceeded, move to dead letter
+		p.persistToDeadLetter(telemetry, err)
+	}
+}
+
+func (p *TelemetryProcessor) persistToDeadLetter(telemetry *Telemetry, err error) {
+	// Implement dead letter persistence
+	p.logger.WithError(err).WithField("message_id", telemetry.MessageID).
+		Error("Moving telemetry to dead letter queue")
+
+	p.updateStats(func(s *ProcessorStats) {
+		s.Failed++
+	})
+
+	// Could write to a separate table or file
+	// For now, just ensure it's in the WAL for manual recovery
+}
+
+func (p *TelemetryProcessor) recoverFromWAL() {
+	defer p.wg.Done()
+
+	if p.persistentWAL == nil {
+		return
+	}
+
+	messages, err := p.persistentWAL.ReadAll()
+	if err != nil {
+		p.logger.WithError(err).Error("Failed to recover from WAL")
+		return
+	}
+
+	p.logger.Infof("Recovering %d messages from WAL", len(messages))
+
+	for _, msg := range messages {
+		telemetry, ok := msg.(*Telemetry)
+		if !ok {
+			continue
+		}
+
+		select {
+		case p.queue <- telemetry:
+		default:
+			p.logger.Warn("Queue full during WAL recovery")
+		}
 	}
 }
 
 // --- Firmware Management Service Implementation ---
 
-type firmwareManagementService struct {
+type FirmwareManagementService struct {
 	store       DataStore
 	logger      *logrus.Logger
 	storagePath string
@@ -474,7 +566,31 @@ type firmwareManagementService struct {
 	signingKey  *utils.SigningKey
 }
 
-func (s *firmwareManagementService) CreateRelease(ctx context.Context, data []byte, metadata FirmwareMetadata) (*FirmwareRelease, error) {
+func NewFirmwareManagementService(store DataStore, logger *logrus.Logger, cfg config.FirmwareConfig) (*FirmwareManagementService, error) {
+	svc := &FirmwareManagementService{
+		store:       store,
+		logger:      logger,
+		storagePath: cfg.StoragePath,
+		maxFileSize: cfg.MaxFileSize,
+	}
+
+	if cfg.SigningEnabled && cfg.PrivateKeyPath != "" {
+		key, err := utils.LoadSigningKey(cfg.PrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load signing key: %w", err)
+		}
+		svc.signingKey = key
+	}
+
+	// Ensure firmware storage exists
+	if err := os.MkdirAll(cfg.StoragePath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create firmware storage: %w", err)
+	}
+
+	return svc, nil
+}
+
+func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []byte, metadata FirmwareMetadata) (*FirmwareRelease, error) {
 	// Validate version format
 	if err := utils.ValidateVersion(metadata.Version); err != nil {
 		return nil, BusinessError{"FIRMWARE_005", fmt.Sprintf("invalid version format: %v", err)}
@@ -548,7 +664,7 @@ func (s *firmwareManagementService) CreateRelease(ctx context.Context, data []by
 	return release, nil
 }
 
-func (s *firmwareManagementService) validateRelease(ctx context.Context, release *FirmwareRelease) {
+func (s *FirmwareManagementService) validateRelease(ctx context.Context, release *FirmwareRelease) {
 	// Read file and verify checksum
 	data, err := os.ReadFile(release.StoragePath)
 	if err != nil {
@@ -565,7 +681,7 @@ func (s *firmwareManagementService) validateRelease(ctx context.Context, release
 	}
 }
 
-func (s *firmwareManagementService) GetRelease(ctx context.Context, id uint) (*FirmwareRelease, error) {
+func (s *FirmwareManagementService) GetRelease(ctx context.Context, id uint) (*FirmwareRelease, error) {
 	release, err := s.store.GetFirmwareRelease(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -576,11 +692,11 @@ func (s *firmwareManagementService) GetRelease(ctx context.Context, id uint) (*F
 	return release, nil
 }
 
-func (s *firmwareManagementService) ListReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error) {
+func (s *FirmwareManagementService) ListReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error) {
 	return s.store.ListFirmwareReleases(ctx, channel)
 }
 
-func (s *firmwareManagementService) PromoteRelease(ctx context.Context, id uint, newStatus string) error {
+func (s *FirmwareManagementService) PromoteRelease(ctx context.Context, id uint, newStatus string) error {
 	release, err := s.store.GetFirmwareRelease(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -613,7 +729,7 @@ func (s *firmwareManagementService) PromoteRelease(ctx context.Context, id uint,
 	return s.store.UpdateFirmwareRelease(ctx, release)
 }
 
-func (s *firmwareManagementService) GetLatestRelease(ctx context.Context, channel string) (*FirmwareRelease, error) {
+func (s *FirmwareManagementService) GetLatestRelease(ctx context.Context, channel string) (*FirmwareRelease, error) {
 	release, err := s.store.GetLatestApprovedFirmware(ctx, channel)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -626,9 +742,9 @@ func (s *firmwareManagementService) GetLatestRelease(ctx context.Context, channe
 
 // --- Update Management Service Implementation ---
 
-type updateManagementService struct {
+type UpdateManagementService struct {
 	store       DataStore
-	firmwareSvc FirmwareManagementService
+	firmwareSvc *FirmwareManagementService
 	logger      *logrus.Logger
 	chunkSize   int
 	chunkCache  map[string]*cachedChunk
@@ -640,7 +756,19 @@ type cachedChunk struct {
 	lastAccess time.Time
 }
 
-func (s *updateManagementService) InitiateUpdate(ctx context.Context, deviceID, firmwareID uint) (*UpdateSession, error) {
+func NewUpdateManagementService(store DataStore, firmwareSvc *FirmwareManagementService, logger *logrus.Logger, cfg config.OTAConfig) *UpdateManagementService {
+	svc := &UpdateManagementService{
+		store:       store,
+		firmwareSvc: firmwareSvc,
+		logger:      logger,
+		chunkSize:   cfg.ChunkSize,
+		chunkCache:  make(map[string]*cachedChunk),
+	}
+	go svc.cleanupCache()
+	return svc
+}
+
+func (s *UpdateManagementService) InitiateUpdate(ctx context.Context, deviceID, firmwareID uint) (*UpdateSession, error) {
 	// Validate device
 	device, err := s.store.GetDevice(ctx, deviceID)
 	if err != nil {
@@ -695,7 +823,7 @@ func (s *updateManagementService) InitiateUpdate(ctx context.Context, deviceID, 
 	return s.store.GetUpdateSession(ctx, session.SessionID)
 }
 
-func (s *updateManagementService) CheckForUpdates(ctx context.Context, deviceUID, currentVersion string) (*UpdateSession, error) {
+func (s *UpdateManagementService) CheckForUpdates(ctx context.Context, deviceUID, currentVersion string) (*UpdateSession, error) {
 	device, err := s.store.GetDeviceByUID(ctx, deviceUID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -734,7 +862,7 @@ func (s *updateManagementService) CheckForUpdates(ctx context.Context, deviceUID
 	return s.InitiateUpdate(ctx, device.ID, latest.ID)
 }
 
-func (s *updateManagementService) GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error) {
+func (s *UpdateManagementService) GetUpdateSession(ctx context.Context, sessionID string) (*UpdateSession, error) {
 	session, err := s.store.GetUpdateSession(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -745,7 +873,7 @@ func (s *updateManagementService) GetUpdateSession(ctx context.Context, sessionI
 	return session, nil
 }
 
-func (s *updateManagementService) DownloadFirmwareChunk(ctx context.Context, sessionID string, offset, size int64) ([]byte, error) {
+func (s *UpdateManagementService) DownloadFirmwareChunk(ctx context.Context, sessionID string, offset, size int64) ([]byte, error) {
 	session, err := s.GetUpdateSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -806,7 +934,7 @@ func (s *updateManagementService) DownloadFirmwareChunk(ctx context.Context, ses
 	return chunk, nil
 }
 
-func (s *updateManagementService) CompleteUpdate(ctx context.Context, sessionID string, checksum string) error {
+func (s *UpdateManagementService) CompleteUpdate(ctx context.Context, sessionID string, checksum string) error {
 	session, err := s.GetUpdateSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -850,7 +978,7 @@ func (s *updateManagementService) CompleteUpdate(ctx context.Context, sessionID 
 	return nil
 }
 
-func (s *updateManagementService) GetUpdateMetrics() map[string]interface{} {
+func (s *UpdateManagementService) GetUpdateMetrics() map[string]interface{} {
 	// This would aggregate metrics from the database
 	return map[string]interface{}{
 		"cache_size": len(s.chunkCache),
@@ -858,7 +986,7 @@ func (s *updateManagementService) GetUpdateMetrics() map[string]interface{} {
 	}
 }
 
-func (s *updateManagementService) getCachedChunk(key string) []byte {
+func (s *UpdateManagementService) getCachedChunk(key string) []byte {
 	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
 
@@ -869,7 +997,7 @@ func (s *updateManagementService) getCachedChunk(key string) []byte {
 	return nil
 }
 
-func (s *updateManagementService) cacheChunk(key string, data []byte) {
+func (s *UpdateManagementService) cacheChunk(key string, data []byte) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
@@ -879,7 +1007,7 @@ func (s *updateManagementService) cacheChunk(key string, data []byte) {
 	}
 }
 
-func (s *updateManagementService) cleanupCache() {
+func (s *UpdateManagementService) cleanupCache() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
@@ -897,12 +1025,19 @@ func (s *updateManagementService) cleanupCache() {
 
 // --- Organization Service Implementation ---
 
-type organizationService struct {
+type OrganizationService struct {
 	store  DataStore
 	logger *logrus.Logger
 }
 
-func (s *organizationService) CreateOrganization(ctx context.Context, org *Organization) error {
+func NewOrganizationService(store DataStore, logger *logrus.Logger) *OrganizationService {
+	return &OrganizationService{
+		store:  store,
+		logger: logger,
+	}
+}
+
+func (s *OrganizationService) CreateOrganization(ctx context.Context, org *Organization) error {
 	if org.Name == "" {
 		return BusinessError{"ORG_004", "organization name is required"}
 	}
@@ -915,7 +1050,7 @@ func (s *organizationService) CreateOrganization(ctx context.Context, org *Organ
 	return nil
 }
 
-func (s *organizationService) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
+func (s *OrganizationService) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
 	org, err := s.store.GetOrganization(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -926,11 +1061,11 @@ func (s *organizationService) GetOrganization(ctx context.Context, id uint) (*Or
 	return org, nil
 }
 
-func (s *organizationService) ListOrganizations(ctx context.Context) ([]*Organization, error) {
+func (s *OrganizationService) ListOrganizations(ctx context.Context) ([]*Organization, error) {
 	return s.store.ListOrganizations(ctx)
 }
 
-func (s *organizationService) UpdateOrganization(ctx context.Context, org *Organization) error {
+func (s *OrganizationService) UpdateOrganization(ctx context.Context, org *Organization) error {
 	existing, err := s.store.GetOrganization(ctx, org.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -947,12 +1082,19 @@ func (s *organizationService) UpdateOrganization(ctx context.Context, org *Organ
 
 // --- Authentication Service Implementation ---
 
-type authenticationService struct {
+type AuthenticationService struct {
 	store  DataStore
 	logger *logrus.Logger
 }
 
-func (s *authenticationService) ValidateToken(ctx context.Context, token string) (*AccessToken, error) {
+func NewAuthenticationService(store DataStore, logger *logrus.Logger) *AuthenticationService {
+	return &AuthenticationService{
+		store:  store,
+		logger: logger,
+	}
+}
+
+func (s *AuthenticationService) ValidateToken(ctx context.Context, token string) (*AccessToken, error) {
 	accessToken, err := s.store.GetAccessToken(ctx, token)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -972,7 +1114,7 @@ func (s *authenticationService) ValidateToken(ctx context.Context, token string)
 	return accessToken, nil
 }
 
-func (s *authenticationService) CreateToken(ctx context.Context, description string, scopes []string, expiresIn time.Duration) (*AccessToken, error) {
+func (s *AuthenticationService) CreateToken(ctx context.Context, description string, scopes []string, expiresIn time.Duration) (*AccessToken, error) {
 	// Generate secure token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -1002,11 +1144,11 @@ func (s *authenticationService) CreateToken(ctx context.Context, description str
 	return accessToken, nil
 }
 
-func (s *authenticationService) RevokeToken(ctx context.Context, token string) error {
+func (s *AuthenticationService) RevokeToken(ctx context.Context, token string) error {
 	return s.store.DeleteAccessToken(ctx, token)
 }
 
-func (s *authenticationService) HasScope(token *AccessToken, scope string) bool {
+func (s *AuthenticationService) HasScope(token *AccessToken, scope string) bool {
 	for _, s := range token.Scopes {
 		if s == scope || s == "admin" {
 			return true

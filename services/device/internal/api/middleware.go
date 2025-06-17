@@ -1,7 +1,7 @@
+// services/device/internal/api/middleware.go
 package api
 
 import (
-	// "context"
 	"net/http"
 	"strings"
 	"time"
@@ -43,7 +43,7 @@ func RequestLogger(logger *logrus.Logger) gin.HandlerFunc {
 }
 
 // TokenAuthentication validates access tokens
-func TokenAuthentication(authService core.AuthenticationService) gin.HandlerFunc {
+func TokenAuthentication(authService *core.AuthenticationService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -72,7 +72,7 @@ func TokenAuthentication(authService core.AuthenticationService) gin.HandlerFunc
 }
 
 // RequireScope checks if token has required scope
-func RequireScope(authService core.AuthenticationService, scope string) gin.HandlerFunc {
+func RequireScope(authService *core.AuthenticationService, scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenVal, exists := c.Get("access_token")
 		if !exists {
@@ -99,7 +99,7 @@ func RequireScope(authService core.AuthenticationService, scope string) gin.Hand
 }
 
 // DeviceAuthentication validates device identity
-func DeviceAuthentication(deviceService core.DeviceManagementService) gin.HandlerFunc {
+func DeviceAuthentication(deviceService *core.DeviceManagementService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		deviceUID := c.Param("uid")
 		if deviceUID == "" {
@@ -170,6 +170,75 @@ func CORS() gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+// RateLimiter implements rate limiting for API endpoints
+func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
+	// Simple in-memory rate limiter
+	// In production, use Redis-based rate limiting
+	clients := make(map[string]*rateLimitClient)
+
+	return func(c *gin.Context) {
+		clientIP := c.ClientIP()
+		now := time.Now()
+
+		client, exists := clients[clientIP]
+		if !exists {
+			clients[clientIP] = &rateLimitClient{
+				lastReset: now,
+				requests:  1,
+			}
+			c.Next()
+			return
+		}
+
+		// Reset counter if minute has passed
+		if now.Sub(client.lastReset) > time.Minute {
+			client.lastReset = now
+			client.requests = 1
+			c.Next()
+			return
+		}
+
+		// Check rate limit
+		if client.requests >= requestsPerMinute {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":       "rate limit exceeded",
+				"retry_after": 60 - int(now.Sub(client.lastReset).Seconds()),
+			})
+			c.Abort()
+			return
+		}
+
+		client.requests++
+		c.Next()
+	}
+}
+
+type rateLimitClient struct {
+	lastReset time.Time
+	requests  int
+}
+
+// Recovery handles panics and prevents server crashes
+func Recovery(logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				logger.WithFields(logrus.Fields{
+					"error":  err,
+					"path":   c.Request.URL.Path,
+					"method": c.Request.Method,
+				}).Error("Panic recovered")
+
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "internal server error",
+				})
+				c.Abort()
+			}
+		}()
 		c.Next()
 	}
 }
