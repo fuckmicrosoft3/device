@@ -1,91 +1,148 @@
 package core
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-// Model is a base struct with common fields for all database models.
-type Model struct {
+// Constants for business logic
+const (
+	// Release channels
+	ReleaseChannelProduction = "major"
+	ReleaseChannelBeta       = "minor"
+	ReleaseChannelAlpha      = "patch"
+
+	// Release statuses
+	ReleaseStatusDraft      = "draft"
+	ReleaseStatusTesting    = "testing"
+	ReleaseStatusApproved   = "approved"
+	ReleaseStatusDeprecated = "deprecated"
+
+	// Update statuses
+	UpdateStatusInitiated   = "initiated"
+	UpdateStatusDownloading = "downloading"
+	UpdateStatusInstalling  = "installing"
+	UpdateStatusCompleted   = "completed"
+	UpdateStatusFailed      = "failed"
+)
+
+// Business-specific errors
+type BusinessError struct {
+	Code    string
+	Message string
+}
+
+func (e BusinessError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+var (
+	// Device errors
+	ErrDeviceNotFound      = BusinessError{"DEVICE_001", "device not found"}
+	ErrDeviceAlreadyExists = BusinessError{"DEVICE_002", "device already registered"}
+	ErrDeviceInactive      = BusinessError{"DEVICE_003", "device is inactive"}
+	ErrDeviceUpdatesDenied = BusinessError{"DEVICE_004", "device updates are disabled"}
+
+	// Firmware errors
+	ErrFirmwareNotFound  = BusinessError{"FIRMWARE_001", "firmware release not found"}
+	ErrFirmwareInvalid   = BusinessError{"FIRMWARE_002", "firmware validation failed"}
+	ErrFirmwareNotActive = BusinessError{"FIRMWARE_003", "firmware release is not active"}
+	ErrVersionDowngrade  = BusinessError{"FIRMWARE_004", "firmware version downgrade not allowed"}
+
+	// OTA errors
+	ErrUpdateInProgress  = BusinessError{"OTA_001", "update already in progress"}
+	ErrNoUpdateAvailable = BusinessError{"OTA_002", "no update available"}
+	ErrUpdateFailed      = BusinessError{"OTA_003", "update failed"}
+	ErrChecksumMismatch  = BusinessError{"OTA_004", "firmware checksum verification failed"}
+
+	// Organization errors
+	ErrOrganizationNotFound = BusinessError{"ORG_001", "organization not found"}
+	ErrOrganizationInactive = BusinessError{"ORG_002", "organization is inactive"}
+)
+
+// BaseModel contains common fields for all entities
+type BaseModel struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index"      json:"-"` // Omit from JSON output
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// Organization represents a customer or tenant.
+// Organization represents a device tenant
 type Organization struct {
-	Model
-	Name    string   `gorm:"uniqueIndex"               json:"name"`
-	Active  bool     `gorm:"default:true"              json:"active"`
-	Devices []Device `gorm:"foreignKey:OrganizationID" json:"-"` // Avoid circular JSON
+	BaseModel
+	Name        string   `gorm:"uniqueIndex;not null" json:"name"`
+	Active      bool     `gorm:"default:true" json:"active"`
+	DeviceLimit int      `gorm:"default:1000" json:"device_limit"`
+	Devices     []Device `gorm:"foreignKey:OrganizationID" json:"-"`
 }
 
-// Device represents an IoT device.
+// Device represents an IoT edge device
 type Device struct {
-	Model
-	UID             string        `gorm:"uniqueIndex"            json:"uid"`
-	Serial          string        `json:"serial"`
-	OrganizationID  uint          `json:"organization_id"`
+	BaseModel
+	DeviceUID       string        `gorm:"uniqueIndex;not null" json:"device_uid"`
+	SerialNumber    string        `gorm:"index" json:"serial_number"`
+	OrganizationID  uint          `gorm:"not null" json:"organization_id"`
 	Organization    *Organization `json:"organization,omitempty"`
 	FirmwareVersion string        `json:"firmware_version"`
-	Active          bool          `gorm:"default:true"           json:"active"`
-	AllowUpdates    bool          `gorm:"default:true"           json:"allow_updates"`
-	LastSeen        *time.Time    `json:"last_seen"`
+	Active          bool          `gorm:"default:true" json:"active"`
+	UpdatesEnabled  bool          `gorm:"default:true" json:"updates_enabled"`
+	LastHeartbeat   *time.Time    `json:"last_heartbeat"`
+	Telemetry       []Telemetry   `gorm:"foreignKey:DeviceID" json:"-"`
 }
 
-// DeviceMessage represents a message received from a device.
-type DeviceMessage struct {
-	UUID        string     `gorm:"primaryKey"    json:"uuid"`
-	DeviceID    uint       `gorm:"index"         json:"device_id"`
-	Device      *Device    `json:"-"` // Avoid circular JSON
-	Message     string     `gorm:"type:text"     json:"message"`
-	Published   bool       `gorm:"default:false" json:"published"`
+// Telemetry represents device telemetry data
+type Telemetry struct {
+	MessageID   string     `gorm:"primaryKey" json:"message_id"`
+	DeviceID    uint       `gorm:"index;not null" json:"device_id"`
+	Device      *Device    `json:"-"`
+	Payload     string     `gorm:"type:text" json:"payload"`
+	ProcessedAt *time.Time `json:"processed_at"`
 	PublishedAt *time.Time `json:"published_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ReceivedAt  time.Time  `json:"received_at" gorm:"default:CURRENT_TIMESTAMP"`
 }
 
-// FirmwareRelease represents a version of device firmware.
+// FirmwareRelease represents a deployable firmware version
 type FirmwareRelease struct {
-	Model
-	Version        string       `gorm:"uniqueIndex"           json:"version"`
-	ReleaseType    string       `json:"release_type"` // e.g., production, beta
-	FilePath       string       `json:"-"`            // Internal path, not exposed
-	FileHash       string       `json:"file_hash"`
-	FileSize       int64        `json:"file_size"`
-	Signature      string       `json:"signature"`
-	Active         bool         `gorm:"default:false"         json:"active"`
-	Valid          bool         `gorm:"default:false"         json:"valid"`
-	ReleaseNotes   string       `gorm:"type:text"             json:"release_notes"`
-	MinimumVersion string       `json:"minimum_version"`
-	OTASessions    []OTASession `gorm:"foreignKey:FirmwareID" json:"-"`
+	BaseModel
+	Version          string          `gorm:"uniqueIndex;not null" json:"version"`
+	ReleaseChannel   string          `gorm:"index;not null" json:"release_channel"` // major, minor, patch
+	StoragePath      string          `json:"-"`                                     // Internal path
+	Checksum         string          `gorm:"not null" json:"checksum"`
+	SizeBytes        int64           `gorm:"not null" json:"size_bytes"`
+	DigitalSignature string          `json:"digital_signature,omitempty"`
+	ReleaseStatus    string          `gorm:"default:'draft'" json:"release_status"` // draft, testing, approved, deprecated
+	ReleaseNotes     string          `gorm:"type:text" json:"release_notes"`
+	MinimumVersion   string          `json:"minimum_version,omitempty"`
+	UpdateSessions   []UpdateSession `gorm:"foreignKey:FirmwareID" json:"-"`
 }
 
-// OTASession represents an Over-The-Air update session for a device.
-type OTASession struct {
-	Model
-	SessionID       string           `gorm:"uniqueIndex"        json:"session_id"`
-	DeviceID        uint             `gorm:"index"              json:"device_id"`
-	Device          *Device          `json:"device,omitempty"`
-	FirmwareID      uint             `json:"firmware_id"`
-	Firmware        *FirmwareRelease `json:"firmware,omitempty"`
-	Status          string           `json:"status"` // e.g., pending, downloading, completed
-	Progress        int              `gorm:"default:0"          json:"progress"`
-	StartedAt       *time.Time       `json:"started_at"`
-	CompletedAt     *time.Time       `json:"completed_at"`
-	ErrorMessage    string           `json:"error_message"`
-	RetryCount      int              `gorm:"default:0"          json:"retry_count"` // Restored
-	BytesDownloaded int64            `json:"bytes_downloaded"`
-	DownloadSpeed   int64            `json:"download_speed"` // Restored
+// UpdateSession represents an OTA update process
+type UpdateSession struct {
+	BaseModel
+	SessionID        string           `gorm:"uniqueIndex;not null" json:"session_id"`
+	DeviceID         uint             `gorm:"index;not null" json:"device_id"`
+	Device           *Device          `json:"device,omitempty"`
+	FirmwareID       uint             `gorm:"not null" json:"firmware_id"`
+	Firmware         *FirmwareRelease `json:"firmware,omitempty"`
+	UpdateStatus     string           `gorm:"index;not null" json:"update_status"` // initiated, downloading, installing, completed, failed
+	ProgressPercent  int              `gorm:"default:0" json:"progress_percent"`
+	StartedAt        *time.Time       `json:"started_at"`
+	CompletedAt      *time.Time       `json:"completed_at"`
+	FailureReason    string           `json:"failure_reason,omitempty"`
+	RetryAttempt     int              `gorm:"default:0" json:"retry_attempt"`
+	BytesTransferred int64            `json:"bytes_transferred"`
+	TransferRate     int64            `json:"transfer_rate_bps"` // bytes per second
 }
 
-// APIKey represents an API authentication key.
-type APIKey struct {
-	Model
-	Key         string     `json:"-"` // Key is sensitive, don't expose
-	Name        string     `json:"name"`
-	Permissions []string   `gorm:"type:text[]"  json:"permissions"` // Restored
-	ExpiresAt   *time.Time `json:"expires_at"`
-	LastUsedAt  *time.Time `json:"last_used_at"`
+// AccessToken represents API authentication
+type AccessToken struct {
+	BaseModel
+	Token        string     `gorm:"uniqueIndex;not null" json:"-"`
+	Description  string     `json:"description"`
+	Scopes       []string   `gorm:"type:text[]" json:"scopes"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	LastAccessAt *time.Time `json:"last_access_at"`
 }
