@@ -1,3 +1,4 @@
+// services/device/internal/api/routes.go
 package api
 
 import (
@@ -21,17 +22,17 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 	// Health check (public)
 	router.GET("/health", handlers.HealthCheck)
 
-	// API v2
-	v2 := router.Group("/api/v2")
+	// API v1
+	v1 := router.Group("/api/v1")
 
-	// Apply rate limiting to all v2 endpoints
-	v2.Use(RateLimiter(100)) // 100 requests per minute per IP
+	// Apply rate limiting to all v1 endpoints
+	v1.Use(RateLimiter(100)) // 100 requests per minute per IP
 
 	// Public device endpoints (device authentication)
-	deviceAPI := v2.Group("/device/:uid")
+	deviceAPI := v1.Group("/device/:uid")
 	deviceAPI.Use(DeviceAuthentication(deviceManagement))
 	{
-		// Telemetry ingestion
+		// Telemetry ingestion via HTTP (also available via MQTT)
 		deviceAPI.POST("/telemetry", handlers.IngestTelemetry)
 
 		// OTA update endpoints
@@ -41,7 +42,7 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 	}
 
 	// Authenticated API endpoints
-	authAPI := v2.Group("")
+	authAPI := v1.Group("")
 	authAPI.Use(TokenAuthentication(authService))
 	{
 		// Device management
@@ -76,6 +77,7 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 		firmware.Use(RequireScope(authService, "firmware:read"))
 		{
 			firmware.GET("/releases", handlers.ListFirmwareReleases)
+			firmware.GET("/releases/:id/test-results", handlers.GetFirmwareTestResults)
 			firmware.POST("/upload", RequireScope(authService, "firmware:write"), handlers.UploadFirmware)
 			firmware.POST("/releases/:id/promote", RequireScope(authService, "firmware:admin"), handlers.PromoteFirmwareRelease)
 		}
@@ -88,6 +90,6 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 		}
 	}
 
-	// OoopsUI endpoint for real-time telemetry
-	// v2.GET("/ws/telemetry", RequireWebSocketAuth(authService), handlers.WebSocketTelemetry)
+	// WebSocket endpoint for real-time telemetry (optional)
+	// v1.GET("/ws/telemetry", RequireWebSocketAuth(authService), handlers.WebSocketTelemetry)
 }

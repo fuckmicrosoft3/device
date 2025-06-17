@@ -1,3 +1,4 @@
+// services/device/internal/core/repository.go
 package core
 
 import (
@@ -22,6 +23,10 @@ type DataStore interface {
 	SaveTelemetryBatch(ctx context.Context, telemetry []*Telemetry) error
 	MarkTelemetryProcessed(ctx context.Context, messageID string) error
 	GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error)
+	GetUnprocessedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error)
+	GetTelemetryByTimeRange(ctx context.Context, deviceID uint, start, end time.Time) ([]*Telemetry, error)
+	GetFailedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error)
+	UpdateTelemetryRetryCount(ctx context.Context, messageID string, retryCount int, lastError string) error
 
 	// Organization operations
 	CreateOrganization(ctx context.Context, org *Organization) error
@@ -36,6 +41,12 @@ type DataStore interface {
 	GetFirmwareByVersion(ctx context.Context, version string) (*FirmwareRelease, error)
 	ListFirmwareReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error)
 	GetLatestApprovedFirmware(ctx context.Context, channel string) (*FirmwareRelease, error)
+
+	// Firmware test operations
+	CreateFirmwareTestResult(ctx context.Context, test *FirmwareTestResult) error
+	UpdateFirmwareTestResult(ctx context.Context, test *FirmwareTestResult) error
+	GetFirmwareTestResults(ctx context.Context, firmwareID uint) ([]*FirmwareTestResult, error)
+	GetTestResultBySessionID(ctx context.Context, sessionID uint) (*FirmwareTestResult, error)
 
 	// Update session operations
 	CreateUpdateSession(ctx context.Context, session *UpdateSession) error
@@ -152,6 +163,48 @@ func (ds *dataStore) GetDeviceTelemetry(ctx context.Context, deviceID uint, limi
 	return telemetry, err
 }
 
+func (ds *dataStore) GetUnprocessedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error) {
+	var telemetry []*Telemetry
+	query := ds.db.WithContext(ctx).
+		Where("processed_at IS NULL").
+		Order("received_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&telemetry).Error
+	return telemetry, err
+}
+
+func (ds *dataStore) GetTelemetryByTimeRange(ctx context.Context, deviceID uint, start, end time.Time) ([]*Telemetry, error) {
+	var telemetry []*Telemetry
+	query := ds.db.WithContext(ctx).
+		Where("device_id = ? AND received_at >= ? AND received_at <= ?", deviceID, start, end).
+		Order("received_at ASC")
+	err := query.Find(&telemetry).Error
+	return telemetry, err
+}
+
+func (ds *dataStore) GetFailedTelemetry(ctx context.Context, limit int) ([]*Telemetry, error) {
+	var telemetry []*Telemetry
+	query := ds.db.WithContext(ctx).
+		Where("last_error IS NOT NULL AND retry_count < ?", 5).
+		Order("received_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&telemetry).Error
+	return telemetry, err
+}
+
+func (ds *dataStore) UpdateTelemetryRetryCount(ctx context.Context, messageID string, retryCount int, lastError string) error {
+	return ds.db.WithContext(ctx).Model(&Telemetry{}).
+		Where("message_id = ?", messageID).
+		Updates(map[string]interface{}{
+			"retry_count": retryCount,
+			"last_error":  lastError,
+		}).Error
+}
+
 // Organization operations
 
 func (ds *dataStore) CreateOrganization(ctx context.Context, org *Organization) error {
@@ -189,7 +242,7 @@ func (ds *dataStore) UpdateFirmwareRelease(ctx context.Context, firmware *Firmwa
 
 func (ds *dataStore) GetFirmwareRelease(ctx context.Context, id uint) (*FirmwareRelease, error) {
 	var firmware FirmwareRelease
-	err := ds.db.WithContext(ctx).First(&firmware, id).Error
+	err := ds.db.WithContext(ctx).Preload("TestResults").First(&firmware, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +260,7 @@ func (ds *dataStore) GetFirmwareByVersion(ctx context.Context, version string) (
 
 func (ds *dataStore) ListFirmwareReleases(ctx context.Context, channel string) ([]*FirmwareRelease, error) {
 	var releases []*FirmwareRelease
-	query := ds.db.WithContext(ctx)
+	query := ds.db.WithContext(ctx).Preload("TestResults")
 	if channel != "" {
 		query = query.Where("release_channel = ?", channel)
 	}
@@ -226,6 +279,36 @@ func (ds *dataStore) GetLatestApprovedFirmware(ctx context.Context, channel stri
 		return nil, err
 	}
 	return &firmware, nil
+}
+
+// Firmware test operations
+
+func (ds *dataStore) CreateFirmwareTestResult(ctx context.Context, test *FirmwareTestResult) error {
+	return ds.db.WithContext(ctx).Create(test).Error
+}
+
+func (ds *dataStore) UpdateFirmwareTestResult(ctx context.Context, test *FirmwareTestResult) error {
+	return ds.db.WithContext(ctx).Save(test).Error
+}
+
+func (ds *dataStore) GetFirmwareTestResults(ctx context.Context, firmwareID uint) ([]*FirmwareTestResult, error) {
+	var tests []*FirmwareTestResult
+	err := ds.db.WithContext(ctx).
+		Where("firmware_id = ?", firmwareID).
+		Order("created_at DESC").
+		Find(&tests).Error
+	return tests, err
+}
+
+func (ds *dataStore) GetTestResultBySessionID(ctx context.Context, sessionID uint) (*FirmwareTestResult, error) {
+	var test FirmwareTestResult
+	err := ds.db.WithContext(ctx).
+		Where("update_session_id = ?", sessionID).
+		First(&test).Error
+	if err != nil {
+		return nil, err
+	}
+	return &test, nil
 }
 
 // Update session operations

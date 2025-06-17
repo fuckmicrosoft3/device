@@ -1,3 +1,4 @@
+// services/device/internal/core/service.go
 package core
 
 import (
@@ -28,6 +29,7 @@ type FirmwareMetadata struct {
 	Version        string
 	ReleaseChannel string
 	ReleaseNotes   string
+	TestDeviceUID  string // Device to test firmware on
 }
 
 // --- Device Management Service Implementation ---
@@ -78,8 +80,9 @@ func (s *DeviceManagementService) RegisterDevice(ctx context.Context, device *De
 
 	s.cacheDevice(ctx, device)
 	s.logger.WithFields(logrus.Fields{
-		"device_uid": device.DeviceUID,
-		"org_id":     device.OrganizationID,
+		"device_uid":     device.DeviceUID,
+		"org_id":         device.OrganizationID,
+		"is_test_device": device.IsTestDevice,
 	}).Info("Device registered successfully")
 
 	return nil
@@ -212,11 +215,24 @@ func (s *TelemetryService) IngestTelemetry(ctx context.Context, deviceUID string
 		return ErrDeviceInactive
 	}
 
+	// Validate telemetry type
+	if telemetry.TelemetryType == "" {
+		return ErrInvalidTelemetryType
+	}
+
 	telemetry.DeviceID = device.ID
 	telemetry.ReceivedAt = time.Now()
 
-	// Enqueue for async processing with reliability
-	return s.processor.Enqueue(telemetry)
+	// Add message ID to payload for idempotency
+	var payload map[string]interface{}
+	if err := json.Unmarshal(telemetry.Payload, &payload); err != nil {
+		payload = make(map[string]interface{})
+	}
+	payload["message_id"] = telemetry.MessageID
+	telemetry.Payload, _ = json.Marshal(payload)
+
+	// Enqueue for async processing
+	return s.processor.Enqueue(telemetry, device.OrganizationID)
 }
 
 func (s *TelemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) error {
@@ -224,11 +240,19 @@ func (s *TelemetryService) IngestBatch(ctx context.Context, batch []*Telemetry) 
 		if telemetry.MessageID == "" {
 			telemetry.MessageID = uuid.New().String()
 		}
+
+		// Get device to find organization
+		device, err := s.store.GetDevice(ctx, telemetry.DeviceID)
+		if err != nil {
+			s.logger.WithError(err).WithField("device_id", telemetry.DeviceID).
+				Warn("Failed to get device for telemetry")
+			continue
+		}
+
 		telemetry.ReceivedAt = time.Now()
 
-		if err := s.processor.Enqueue(telemetry); err != nil {
+		if err := s.processor.Enqueue(telemetry, device.OrganizationID); err != nil {
 			s.logger.WithError(err).Warn("Failed to enqueue telemetry")
-			// Continue processing other messages
 		}
 	}
 	return nil
@@ -246,73 +270,52 @@ func (s *TelemetryService) Stop() {
 	s.processor.Stop()
 }
 
-// TelemetryProcessor handles async telemetry processing with reliability
+// TelemetryProcessor handles async telemetry processing
 type TelemetryProcessor struct {
-	store      DataStore
-	messaging  *infrastructure.Messaging
-	logger     *logrus.Logger
-	queue      chan *Telemetry
-	retryQueue chan *RetryItem
-	// persistentWAL *infrastructure.WAL
-	workers  int
-	wg       sync.WaitGroup
-	shutdown chan struct{}
-	stats    *ProcessorStats
+	store     DataStore
+	messaging *infrastructure.Messaging
+	logger    *logrus.Logger
+	queue     chan *TelemetryItem
+	workers   int
+	wg        sync.WaitGroup
+	shutdown  chan struct{}
+	stats     *ProcessorStats
+	orgCache  map[uint]*Organization
+	cacheMu   sync.RWMutex
 }
 
-type RetryItem struct {
-	Telemetry   *Telemetry
-	RetryCount  int
-	LastError   error
-	NextRetryAt time.Time
+type TelemetryItem struct {
+	Telemetry      *Telemetry
+	OrganizationID uint
 }
 
 type ProcessorStats struct {
-	mu              sync.RWMutex
-	Processed       uint64
-	Failed          uint64
-	Retried         uint64
-	QueueDepth      int
-	RetryQueueDepth int
+	mu         sync.RWMutex
+	Processed  uint64
+	Failed     uint64
+	QueueDepth int
 }
 
 func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger) *TelemetryProcessor {
-	// // Initialize Write-Ahead Log for persistence
-	// wal, err := infrastructure.NewWAL("/data/telemetry-wal")
-	// if err != nil {
-	// 	logger.WithError(err).Error("Failed to initialize WAL, using in-memory fallback")
-	// }
-
 	return &TelemetryProcessor{
-		store:      store,
-		messaging:  messaging,
-		logger:     logger,
-		queue:      make(chan *Telemetry, 10000),
-		retryQueue: make(chan *RetryItem, 5000),
-		// persistentWAL: wal,
-		shutdown: make(chan struct{}),
-		stats:    &ProcessorStats{},
+		store:     store,
+		messaging: messaging,
+		logger:    logger,
+		queue:     make(chan *TelemetryItem, 10000),
+		shutdown:  make(chan struct{}),
+		stats:     &ProcessorStats{},
+		orgCache:  make(map[uint]*Organization),
 	}
 }
 
 func (p *TelemetryProcessor) Start(workers int) {
 	p.workers = workers
 
-	// Start main workers
+	// Start workers
 	for i := 0; i < workers; i++ {
 		p.wg.Add(1)
 		go p.worker(i)
 	}
-
-	// Start retry worker
-	p.wg.Add(1)
-	go p.retryWorker()
-
-	// // Start WAL recovery
-	// if p.persistentWAL != nil {
-	// 	p.wg.Add(1)
-	// 	go p.recoverFromWAL()
-	// }
 
 	p.logger.Infof("Started %d telemetry processor workers", workers)
 }
@@ -320,35 +323,23 @@ func (p *TelemetryProcessor) Start(workers int) {
 func (p *TelemetryProcessor) Stop() {
 	close(p.shutdown)
 	p.wg.Wait()
-	// if p.persistentWAL != nil {
-	// 	p.persistentWAL.Close()
-	// }
 }
 
-func (p *TelemetryProcessor) Enqueue(telemetry *Telemetry) error {
-	// // Write to WAL first for durability
-	// if p.persistentWAL != nil {
-	// 	if err := p.persistentWAL.Write(telemetry); err != nil {
-	// 		p.logger.WithError(err).Warn("Failed to write to WAL")
-	// 	}
-	// }
+func (p *TelemetryProcessor) Enqueue(telemetry *Telemetry, orgID uint) error {
+	item := &TelemetryItem{
+		Telemetry:      telemetry,
+		OrganizationID: orgID,
+	}
 
 	select {
-	case p.queue <- telemetry:
+	case p.queue <- item:
 		return nil
 	default:
-		// Queue full, try to persist for later processing
-		return p.persistToFallback(telemetry)
+		p.updateStats(func(s *ProcessorStats) {
+			s.Failed++
+		})
+		return BusinessError{"TELEMETRY_003", "telemetry queue full"}
 	}
-}
-
-func (p *TelemetryProcessor) persistToFallback(telemetry *Telemetry) error {
-	// Implement fallback persistence (e.g., local file, secondary queue)
-	p.logger.Warn("Main queue full, persisting to fallback")
-	p.updateStats(func(s *ProcessorStats) {
-		s.Failed++
-	})
-	return BusinessError{"TELEMETRY_001", "telemetry queue full, message persisted for later processing"}
 }
 
 func (p *TelemetryProcessor) Stats() map[string]interface{} {
@@ -356,13 +347,11 @@ func (p *TelemetryProcessor) Stats() map[string]interface{} {
 	defer p.stats.mu.RUnlock()
 
 	return map[string]interface{}{
-		"processed":         p.stats.Processed,
-		"failed":            p.stats.Failed,
-		"retried":           p.stats.Retried,
-		"queue_depth":       len(p.queue),
-		"retry_queue_depth": len(p.retryQueue),
-		"queue_capacity":    cap(p.queue),
-		"workers":           p.workers,
+		"processed":      p.stats.Processed,
+		"failed":         p.stats.Failed,
+		"queue_depth":    len(p.queue),
+		"queue_capacity": cap(p.queue),
+		"workers":        p.workers,
 	}
 }
 
@@ -379,90 +368,63 @@ func (p *TelemetryProcessor) worker(id int) {
 		select {
 		case <-p.shutdown:
 			return
-		case telemetry := <-p.queue:
-			p.processTelemetry(telemetry, 0)
+		case item := <-p.queue:
+			p.processTelemetry(item)
 		}
 	}
 }
 
-func (p *TelemetryProcessor) retryWorker() {
-	defer p.wg.Done()
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-p.shutdown:
-			return
-		case <-ticker.C:
-			p.processRetries()
-		case item := <-p.retryQueue:
-			if time.Now().After(item.NextRetryAt) {
-				p.processTelemetry(item.Telemetry, item.RetryCount)
-			} else {
-				// Re-queue for later
-				select {
-				case p.retryQueue <- item:
-				default:
-					p.logger.Warn("Retry queue full, dropping retry item")
-				}
-			}
-		}
-	}
-}
-
-func (p *TelemetryProcessor) processRetries() {
-	retryItems := make([]*RetryItem, 0)
-
-	// Drain retry queue
-	for {
-		select {
-		case item := <-p.retryQueue:
-			retryItems = append(retryItems, item)
-		default:
-			goto process
-		}
-	}
-
-process:
-	now := time.Now()
-	for _, item := range retryItems {
-		if now.After(item.NextRetryAt) {
-			p.processTelemetry(item.Telemetry, item.RetryCount)
-		} else {
-			// Re-queue for later
-			select {
-			case p.retryQueue <- item:
-			default:
-				p.logger.Warn("Retry queue full during reprocessing")
-			}
-		}
-	}
-}
-
-func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount int) {
+func (p *TelemetryProcessor) processTelemetry(item *TelemetryItem) {
 	ctx := context.Background()
 
-	err := p.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
+	// Get organization with queue mappings
+	org, err := p.getOrganization(ctx, item.OrganizationID)
+	if err != nil {
+		p.logger.WithError(err).WithField("org_id", item.OrganizationID).
+			Error("Failed to get organization")
+		p.updateStats(func(s *ProcessorStats) {
+			s.Failed++
+		})
+		return
+	}
+
+	// Determine target queue
+	queueName, err := org.QueueMappings.GetQueueForTelemetryType(item.Telemetry.TelemetryType)
+	if err != nil {
+		p.logger.WithError(err).WithFields(logrus.Fields{
+			"telemetry_type": item.Telemetry.TelemetryType,
+			"org_id":         item.OrganizationID,
+		}).Error("No queue configured for telemetry type")
+		item.Telemetry.LastError = err.Error()
+	} else {
+		item.Telemetry.QueueName = queueName
+	}
+
+	err = p.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
 		// Save telemetry
-		if err := tx.SaveTelemetry(ctx, telemetry); err != nil {
+		if err := tx.SaveTelemetry(ctx, item.Telemetry); err != nil {
 			return fmt.Errorf("failed to save telemetry: %w", err)
 		}
 
 		// Update device heartbeat
-		if err := tx.UpdateDeviceHeartbeat(ctx, telemetry.DeviceID); err != nil {
+		if err := tx.UpdateDeviceHeartbeat(ctx, item.Telemetry.DeviceID); err != nil {
 			return fmt.Errorf("failed to update heartbeat: %w", err)
 		}
 
-		// Publish to messaging system
-		if p.messaging != nil {
-			if err := p.messaging.PublishWithRetry(ctx, "device-telemetry", telemetry, 3); err != nil {
+		// Publish to messaging system if queue is configured
+		if p.messaging != nil && queueName != "" {
+			msgErr := p.messaging.PublishToQueue(ctx, org.ConnectionString, queueName, item.Telemetry)
+			if msgErr != nil {
 				// Log but don't fail the transaction
-				p.logger.WithError(err).Warn("Failed to publish to messaging system")
-			}
-
-			if err := tx.MarkTelemetryProcessed(ctx, telemetry.MessageID); err != nil {
-				return fmt.Errorf("failed to mark as processed: %w", err)
+				p.logger.WithError(msgErr).WithFields(logrus.Fields{
+					"queue":      queueName,
+					"message_id": item.Telemetry.MessageID,
+				}).Error("Failed to publish to queue")
+				item.Telemetry.LastError = msgErr.Error()
+			} else {
+				if err := tx.MarkTelemetryProcessed(ctx, item.Telemetry.MessageID); err != nil {
+					return fmt.Errorf("failed to mark as processed: %w", err)
+				}
 			}
 		}
 
@@ -470,95 +432,47 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 	})
 
 	if err != nil {
-		p.handleProcessingError(telemetry, err, retryCount)
+		p.logger.WithError(err).WithField("message_id", item.Telemetry.MessageID).
+			Error("Failed to process telemetry")
+		p.updateStats(func(s *ProcessorStats) {
+			s.Failed++
+		})
 	} else {
-		// // Remove from WAL on success
-		// if p.persistentWAL != nil {
-		// 	p.persistentWAL.Remove(telemetry.MessageID)
-		// }
 		p.updateStats(func(s *ProcessorStats) {
 			s.Processed++
 		})
 	}
 }
 
-func (p *TelemetryProcessor) handleProcessingError(telemetry *Telemetry, err error, retryCount int) {
-	p.logger.WithError(err).WithFields(logrus.Fields{
-		"message_id":  telemetry.MessageID,
-		"retry_count": retryCount,
-	}).Error("Failed to process telemetry")
+func (p *TelemetryProcessor) getOrganization(ctx context.Context, orgID uint) (*Organization, error) {
+	// Check cache first
+	p.cacheMu.RLock()
+	org, exists := p.orgCache[orgID]
+	p.cacheMu.RUnlock()
 
-	if retryCount < 5 {
-		// Exponential backoff
-		nextRetry := time.Now().Add(time.Duration(1<<uint(retryCount)) * time.Second)
-		retryItem := &RetryItem{
-			Telemetry:   telemetry,
-			RetryCount:  retryCount + 1,
-			LastError:   err,
-			NextRetryAt: nextRetry,
-		}
-
-		select {
-		case p.retryQueue <- retryItem:
-			p.updateStats(func(s *ProcessorStats) {
-				s.Retried++
-			})
-		default:
-			// Retry queue full, persist to dead letter
-			p.persistToDeadLetter(telemetry, err)
-		}
-	} else {
-		// Max retries exceeded, move to dead letter
-		p.persistToDeadLetter(telemetry, err)
+	if exists {
+		return org, nil
 	}
+
+	// Load from database
+	org, err := p.store.GetOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.orgCache[orgID] = org
+	p.cacheMu.Unlock()
+
+	return org, nil
 }
-
-func (p *TelemetryProcessor) persistToDeadLetter(telemetry *Telemetry, err error) {
-	// Implement dead letter persistence
-	p.logger.WithError(err).WithField("message_id", telemetry.MessageID).
-		Error("Moving telemetry to dead letter queue")
-
-	p.updateStats(func(s *ProcessorStats) {
-		s.Failed++
-	})
-
-	// Could write to a separate table or file
-	// For now, just ensure it's in the WAL for manual recovery
-}
-
-// func (p *TelemetryProcessor) recoverFromWAL() {
-// 	defer p.wg.Done()
-
-// 	if p.persistentWAL == nil {
-// 		return
-// 	}
-
-// 	messages, err := p.persistentWAL.ReadAll()
-// 	if err != nil {
-// 		p.logger.WithError(err).Error("Failed to recover from WAL")
-// 		return
-// 	}
-
-// 	p.logger.Infof("Recovering %d messages from WAL", len(messages))
-
-// 	for _, msg := range messages {
-// 		telemetry, ok := msg.(*Telemetry)
-// 		if !ok {
-// 			continue
-// 		}
-
-// 		select {
-// 		case p.queue <- telemetry:
-// 		default:
-// 			p.logger.Warn("Queue full during WAL recovery")
-// 		}
-// 	}
-// }
 
 // --- Firmware Management Service Implementation ---
 
 type FirmwareManagementService struct {
 	store       DataStore
+	updateMgmt  *UpdateManagementService
 	logger      *logrus.Logger
 	storagePath string
 	maxFileSize int64
@@ -589,6 +503,11 @@ func NewFirmwareManagementService(store DataStore, logger *logrus.Logger, cfg co
 	return svc, nil
 }
 
+// SetUpdateManagementService sets the update management service (to avoid circular dependency)
+func (s *FirmwareManagementService) SetUpdateManagementService(updateMgmt *UpdateManagementService) {
+	s.updateMgmt = updateMgmt
+}
+
 func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []byte, metadata FirmwareMetadata) (*FirmwareRelease, error) {
 	// Validate version format
 	if err := utils.ValidateVersion(metadata.Version); err != nil {
@@ -604,6 +523,14 @@ func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []by
 	existing, err := s.store.GetFirmwareByVersion(ctx, metadata.Version)
 	if err == nil && existing != nil {
 		return nil, BusinessError{"FIRMWARE_007", "version already exists"}
+	}
+
+	// Validate test device exists if specified
+	if metadata.TestDeviceUID != "" {
+		testDevice, err := s.store.GetDeviceByUID(ctx, metadata.TestDeviceUID)
+		if err != nil || !testDevice.Active || !testDevice.IsTestDevice {
+			return nil, ErrTestDeviceNotFound
+		}
 	}
 
 	// Calculate checksum
@@ -651,8 +578,10 @@ func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []by
 		return nil, fmt.Errorf("failed to create release record: %w", err)
 	}
 
-	// Start background validation
-	go s.validateRelease(context.Background(), release)
+	// Schedule test if test device was specified
+	if metadata.TestDeviceUID != "" {
+		go s.scheduleTest(context.Background(), release, metadata.TestDeviceUID)
+	}
 
 	s.logger.WithFields(logrus.Fields{
 		"version": release.Version,
@@ -663,20 +592,61 @@ func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []by
 	return release, nil
 }
 
-func (s *FirmwareManagementService) validateRelease(ctx context.Context, release *FirmwareRelease) {
-	// Read file and verify checksum
-	data, err := os.ReadFile(release.StoragePath)
-	if err != nil {
-		s.logger.WithError(err).Error("Failed to read firmware for validation")
+func (s *FirmwareManagementService) scheduleTest(ctx context.Context, release *FirmwareRelease, testDeviceUID string) {
+	// Check if test already exists
+	existingTests, err := s.store.GetFirmwareTestResults(ctx, release.ID)
+	if err == nil {
+		for _, test := range existingTests {
+			if test.TestStatus == FirmwareTestPending || test.TestStatus == FirmwareTestRunning {
+				s.logger.WithField("firmware_id", release.ID).
+					Info("Test already scheduled for firmware")
+				return
+			}
+		}
+	}
+
+	// Create test result record
+	testResult := &FirmwareTestResult{
+		FirmwareID:    release.ID,
+		TestDeviceUID: testDeviceUID,
+		TestStatus:    FirmwareTestPending,
+	}
+
+	if err := s.store.CreateFirmwareTestResult(ctx, testResult); err != nil {
+		s.logger.WithError(err).Error("Failed to create test result record")
 		return
 	}
 
-	hash := sha256.Sum256(data)
-	if hex.EncodeToString(hash[:]) == release.Checksum {
-		release.ReleaseStatus = ReleaseStatusTesting
-		if err := s.store.UpdateFirmwareRelease(ctx, release); err != nil {
-			s.logger.WithError(err).Error("Failed to update release status")
+	// Get test device
+	device, err := s.store.GetDeviceByUID(ctx, testDeviceUID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get test device")
+		return
+	}
+
+	// Initiate update on test device
+	if s.updateMgmt != nil {
+		session, err := s.updateMgmt.InitiateUpdate(ctx, device.ID, release.ID)
+		if err != nil {
+			s.logger.WithError(err).Error("Failed to initiate test update")
+			testResult.TestStatus = FirmwareTestFailed
+			testResult.ErrorMessage = err.Error()
+			s.store.UpdateFirmwareTestResult(ctx, testResult)
+			return
 		}
+
+		// Update test result with session ID
+		testResult.UpdateSessionID = &session.ID
+		now := time.Now()
+		testResult.StartedAt = &now
+		testResult.TestStatus = FirmwareTestRunning
+		s.store.UpdateFirmwareTestResult(ctx, testResult)
+
+		s.logger.WithFields(logrus.Fields{
+			"firmware_id": release.ID,
+			"test_device": testDeviceUID,
+			"session_id":  session.SessionID,
+		}).Info("Firmware test initiated")
 	}
 }
 
@@ -702,6 +672,28 @@ func (s *FirmwareManagementService) PromoteRelease(ctx context.Context, id uint,
 			return ErrFirmwareNotFound
 		}
 		return err
+	}
+
+	// Check if firmware has passed testing before allowing approval
+	if newStatus == ReleaseStatusApproved && release.ReleaseStatus != ReleaseStatusTesting {
+		// Check test results
+		testResults, err := s.store.GetFirmwareTestResults(ctx, id)
+		if err != nil || len(testResults) == 0 {
+			return ErrFirmwareNotTested
+		}
+
+		// Ensure at least one test passed
+		hasPassedTest := false
+		for _, test := range testResults {
+			if test.TestStatus == FirmwareTestPassed {
+				hasPassedTest = true
+				break
+			}
+		}
+
+		if !hasPassedTest {
+			return ErrFirmwareNotTested
+		}
 	}
 
 	// Validate status transition
@@ -781,7 +773,7 @@ func (s *UpdateManagementService) InitiateUpdate(ctx context.Context, deviceID, 
 		return nil, ErrDeviceInactive
 	}
 
-	if !device.UpdatesEnabled {
+	if !device.UpdatesEnabled && !device.IsTestDevice {
 		return nil, ErrDeviceUpdatesDenied
 	}
 
@@ -797,7 +789,8 @@ func (s *UpdateManagementService) InitiateUpdate(ctx context.Context, deviceID, 
 		return nil, err
 	}
 
-	if firmware.ReleaseStatus != ReleaseStatusApproved {
+	// For test devices, allow any status; for production devices, require approved
+	if !device.IsTestDevice && firmware.ReleaseStatus != ReleaseStatusApproved {
 		return nil, ErrFirmwareNotActive
 	}
 
@@ -807,6 +800,7 @@ func (s *UpdateManagementService) InitiateUpdate(ctx context.Context, deviceID, 
 		DeviceID:     deviceID,
 		FirmwareID:   firmwareID,
 		UpdateStatus: UpdateStatusInitiated,
+		IsTestUpdate: device.IsTestDevice,
 	}
 
 	if err := s.store.CreateUpdateSession(ctx, session); err != nil {
@@ -817,6 +811,7 @@ func (s *UpdateManagementService) InitiateUpdate(ctx context.Context, deviceID, 
 		"session_id":  session.SessionID,
 		"device_id":   deviceID,
 		"firmware_id": firmwareID,
+		"is_test":     device.IsTestDevice,
 	}).Info("Update session initiated")
 
 	return s.store.GetUpdateSession(ctx, session.SessionID)
@@ -831,7 +826,7 @@ func (s *UpdateManagementService) CheckForUpdates(ctx context.Context, deviceUID
 		return nil, err
 	}
 
-	if !device.Active || !device.UpdatesEnabled {
+	if !device.Active || (!device.UpdatesEnabled && !device.IsTestDevice) {
 		return nil, nil // No updates available
 	}
 
@@ -948,6 +943,12 @@ func (s *UpdateManagementService) CompleteUpdate(ctx context.Context, sessionID 
 		session.UpdateStatus = UpdateStatusFailed
 		session.FailureReason = "checksum verification failed"
 		s.store.UpdateUpdateSession(ctx, session)
+
+		// Update test result if this was a test
+		if session.IsTestUpdate {
+			s.updateTestResult(ctx, session, false, "Checksum verification failed")
+		}
+
 		return ErrChecksumMismatch
 	}
 
@@ -968,6 +969,11 @@ func (s *UpdateManagementService) CompleteUpdate(ctx context.Context, sessionID 
 		s.store.UpdateDevice(ctx, device)
 	}
 
+	// Update test result if this was a test
+	if session.IsTestUpdate {
+		s.updateTestResult(ctx, session, true, "")
+	}
+
 	s.logger.WithFields(logrus.Fields{
 		"session_id": sessionID,
 		"device_id":  session.DeviceID,
@@ -975,6 +981,52 @@ func (s *UpdateManagementService) CompleteUpdate(ctx context.Context, sessionID 
 	}).Info("Update completed successfully")
 
 	return nil
+}
+
+func (s *UpdateManagementService) updateTestResult(ctx context.Context, session *UpdateSession, success bool, errorMsg string) {
+	// Find test result for this session
+	testResults, err := s.store.GetFirmwareTestResults(ctx, session.FirmwareID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get test results")
+		return
+	}
+
+	for _, test := range testResults {
+		if test.UpdateSessionID != nil && *test.UpdateSessionID == session.ID {
+			now := time.Now()
+			test.CompletedAt = &now
+
+			if success {
+				test.TestStatus = FirmwareTestPassed
+			} else {
+				test.TestStatus = FirmwareTestFailed
+				test.ErrorMessage = errorMsg
+			}
+
+			if test.StartedAt != nil {
+				test.TestDuration = int64(now.Sub(*test.StartedAt).Seconds())
+			}
+
+			// Update firmware status to testing if test passed
+			if success {
+				firmware, err := s.store.GetFirmwareRelease(ctx, session.FirmwareID)
+				if err == nil && firmware.ReleaseStatus == ReleaseStatusDraft {
+					firmware.ReleaseStatus = ReleaseStatusTesting
+					s.store.UpdateFirmwareRelease(ctx, firmware)
+				}
+			}
+
+			if err := s.store.UpdateFirmwareTestResult(ctx, test); err != nil {
+				s.logger.WithError(err).Error("Failed to update test result")
+			} else {
+				s.logger.WithFields(logrus.Fields{
+					"firmware_id": session.FirmwareID,
+					"test_status": test.TestStatus,
+				}).Info("Firmware test result updated")
+			}
+			break
+		}
+	}
 }
 
 func (s *UpdateManagementService) GetUpdateMetrics() map[string]interface{} {

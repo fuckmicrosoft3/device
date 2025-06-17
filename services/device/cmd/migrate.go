@@ -1,3 +1,4 @@
+// services/device/cmd/migrate.go
 package cmd
 
 import (
@@ -11,7 +12,7 @@ import (
 var migrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Runs database migrations",
-
+	Long:  `Applies all necessary database schema migrations to the target database.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Info("Connecting to database for migration...")
 		db, err := infrastructure.NewDatabase(cfg.Database)
@@ -25,6 +26,7 @@ var migrateCmd = &cobra.Command{
 			&core.Device{},
 			&core.Telemetry{},
 			&core.FirmwareRelease{},
+			&core.FirmwareTestResult{},
 			&core.UpdateSession{},
 			&core.AccessToken{},
 		)

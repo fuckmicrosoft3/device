@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"example.com/backstage/services/device/config"
@@ -12,126 +13,121 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Messaging handles Azure Service Bus connections
 type Messaging struct {
-	client        *azservicebus.Client
-	sender        *azservicebus.Sender
-	maxRetries    int
-	retryDelay    time.Duration
-	deadLetterWAL *WAL
+	defaultClient *azservicebus.Client
+	defaultSender *azservicebus.Sender
+	orgClients    map[string]*azservicebus.Client            // Connection string -> Client
+	orgSenders    map[string]map[string]*azservicebus.Sender // Connection string -> Queue -> Sender
+	mu            sync.RWMutex
 	logger        *logrus.Logger
 }
 
+// NewMessaging creates a new messaging service
 func NewMessaging(cfg config.ServiceBusConfig) (*Messaging, error) {
-	if cfg.ConnectionString == "" {
-		return nil, fmt.Errorf("service bus connection string is required")
+	m := &Messaging{
+		orgClients: make(map[string]*azservicebus.Client),
+		orgSenders: make(map[string]map[string]*azservicebus.Sender),
+		logger:     logrus.New(),
 	}
 
-	client, err := azservicebus.NewClientFromConnectionString(cfg.ConnectionString, nil)
+	// Initialize default client if configured
+	if cfg.ConnectionString != "" {
+		client, err := azservicebus.NewClientFromConnectionString(cfg.ConnectionString, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create default service bus client: %w", err)
+		}
+		m.defaultClient = client
+
+		if cfg.QueueName != "" {
+			sender, err := client.NewSender(cfg.QueueName, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create default sender: %w", err)
+			}
+			m.defaultSender = sender
+		}
+	}
+
+	return m, nil
+}
+
+// getOrCreateClient gets or creates a client for a connection string
+func (m *Messaging) getOrCreateClient(connectionString string) (*azservicebus.Client, error) {
+	m.mu.RLock()
+	client, exists := m.orgClients[connectionString]
+	m.mu.RUnlock()
+
+	if exists {
+		return client, nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	client, exists = m.orgClients[connectionString]
+	if exists {
+		return client, nil
+	}
+
+	// Create new client
+	client, err := azservicebus.NewClientFromConnectionString(connectionString, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service bus client: %w", err)
 	}
 
-	sender, err := client.NewSender(cfg.QueueName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sender: %w", err)
-	}
-
-	// Initialize dead letter WAL for failed messages
-	deadLetterWAL, err := NewWAL("/data/messaging-dead-letter")
-	if err != nil {
-		// Log but don't fail - messaging can work without WAL
-		logrus.WithError(err).Warn("Failed to initialize dead letter WAL")
-	}
-
-	return &Messaging{
-		client:        client,
-		sender:        sender,
-		maxRetries:    cfg.MaxRetries,
-		retryDelay:    cfg.RetryDelay,
-		deadLetterWAL: deadLetterWAL,
-		logger:        logrus.New(),
-	}, nil
+	m.orgClients[connectionString] = client
+	return client, nil
 }
 
-// Publish sends a message without retry
+// getOrCreateSender gets or creates a sender for a specific queue
+func (m *Messaging) getOrCreateSender(connectionString, queueName string) (*azservicebus.Sender, error) {
+	client, err := m.getOrCreateClient(connectionString)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.RLock()
+	senders, exists := m.orgSenders[connectionString]
+	if exists {
+		sender, senderExists := senders[queueName]
+		if senderExists {
+			m.mu.RUnlock()
+			return sender, nil
+		}
+	}
+	m.mu.RUnlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Initialize map if needed
+	if m.orgSenders[connectionString] == nil {
+		m.orgSenders[connectionString] = make(map[string]*azservicebus.Sender)
+	}
+
+	// Double-check after acquiring write lock
+	sender, exists := m.orgSenders[connectionString][queueName]
+	if exists {
+		return sender, nil
+	}
+
+	// Create new sender
+	sender, err = client.NewSender(queueName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sender for queue %s: %w", queueName, err)
+	}
+
+	m.orgSenders[connectionString][queueName] = sender
+	return sender, nil
+}
+
+// Publish sends a message to the default queue
 func (m *Messaging) Publish(ctx context.Context, topic string, message interface{}) error {
-	return m.publishMessage(ctx, topic, message)
-}
-
-// PublishWithRetry sends a message with retry logic
-func (m *Messaging) PublishWithRetry(ctx context.Context, topic string, message interface{}, maxRetries int) error {
-	var lastErr error
-
-	// Use configured max retries if not specified
-	if maxRetries <= 0 {
-		maxRetries = m.maxRetries
+	if m.defaultSender == nil {
+		return fmt.Errorf("default sender not configured")
 	}
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff
-			delay := time.Duration(attempt) * m.retryDelay
-			if delay > 30*time.Second {
-				delay = 30 * time.Second
-			}
-
-			m.logger.WithFields(logrus.Fields{
-				"attempt": attempt,
-				"delay":   delay,
-				"topic":   topic,
-			}).Warn("Retrying message publish")
-
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-
-		err := m.publishMessage(ctx, topic, message)
-		if err == nil {
-			if attempt > 0 {
-				m.logger.WithFields(logrus.Fields{
-					"attempt": attempt,
-					"topic":   topic,
-				}).Info("Message published successfully after retry")
-			}
-			return nil
-		}
-
-		lastErr = err
-
-		// Check if error is retryable
-		if !m.isRetryableError(err) {
-			break
-		}
-	}
-
-	// All retries failed, send to dead letter
-	if m.deadLetterWAL != nil {
-		deadLetterEntry := map[string]interface{}{
-			"topic":     topic,
-			"message":   message,
-			"error":     lastErr.Error(),
-			"timestamp": time.Now(),
-			"retries":   maxRetries,
-		}
-
-		if err := m.deadLetterWAL.Write(deadLetterEntry); err != nil {
-			m.logger.WithError(err).Error("Failed to write to dead letter WAL")
-		} else {
-			m.logger.WithFields(logrus.Fields{
-				"topic": topic,
-				"error": lastErr,
-			}).Error("Message sent to dead letter queue after max retries")
-		}
-	}
-
-	return fmt.Errorf("failed to publish message after %d retries: %w", maxRetries, lastErr)
-}
-
-// publishMessage handles the actual message publishing
-func (m *Messaging) publishMessage(ctx context.Context, topic string, message interface{}) error {
 	data, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
@@ -147,53 +143,95 @@ func (m *Messaging) publishMessage(ctx context.Context, topic string, message in
 		Subject:     &topic,
 	}
 
+	return m.defaultSender.SendMessage(ctx, msg, nil)
+}
+
+// PublishToQueue sends a message to a specific queue using organization's connection string
+func (m *Messaging) PublishToQueue(ctx context.Context, connectionString, queueName string, message interface{}) error {
+	if connectionString == "" {
+		return fmt.Errorf("connection string is required")
+	}
+	if queueName == "" {
+		return fmt.Errorf("queue name is required")
+	}
+
+	sender, err := m.getOrCreateSender(connectionString, queueName)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Extract telemetry type if available
+	telemetryType := ""
+	if msg, ok := message.(interface{ GetTelemetryType() string }); ok {
+		telemetryType = msg.GetTelemetryType()
+	}
+
+	sbMsg := &azservicebus.Message{
+		Body: data,
+		ApplicationProperties: map[string]interface{}{
+			"telemetry_type": telemetryType,
+			"timestamp":      time.Now().Unix(),
+			"queue_name":     queueName,
+		},
+		ContentType: strPtr("application/json"),
+	}
+
 	// Add message ID for deduplication
 	if msgWithID, ok := message.(interface{ GetMessageID() string }); ok {
 		messageID := msgWithID.GetMessageID()
-		msg.MessageID = &messageID
+		sbMsg.MessageID = &messageID
 	}
 
-	return m.sender.SendMessage(ctx, msg, nil)
+	return sender.SendMessage(ctx, sbMsg, nil)
 }
 
-// PublishBatch sends multiple messages efficiently
-func (m *Messaging) PublishBatch(ctx context.Context, topic string, messages []interface{}) error {
+// PublishBatchToQueue sends multiple messages to a specific queue
+func (m *Messaging) PublishBatchToQueue(ctx context.Context, connectionString, queueName string, messages []interface{}) error {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	batch, err := m.sender.NewMessageBatch(ctx, nil)
+	sender, err := m.getOrCreateSender(connectionString, queueName)
+	if err != nil {
+		return err
+	}
+
+	batch, err := sender.NewMessageBatch(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create message batch: %w", err)
 	}
 
-	failedMessages := []interface{}{}
-
+	successCount := 0
 	for _, message := range messages {
 		data, err := json.Marshal(message)
 		if err != nil {
 			m.logger.WithError(err).Warn("Failed to marshal message in batch")
-			failedMessages = append(failedMessages, message)
 			continue
 		}
 
 		msg := &azservicebus.Message{
 			Body: data,
 			ApplicationProperties: map[string]interface{}{
-				"topic":     topic,
-				"timestamp": time.Now().Unix(),
+				"timestamp":  time.Now().Unix(),
+				"queue_name": queueName,
 			},
 		}
 
 		err = batch.AddMessage(msg, nil)
 		if err != nil {
 			// Batch is full, send it
-			if err := m.sender.SendMessageBatch(ctx, batch, nil); err != nil {
+			if err := sender.SendMessageBatch(ctx, batch, nil); err != nil {
 				return fmt.Errorf("failed to send message batch: %w", err)
 			}
+			m.logger.WithField("count", successCount).Debug("Sent partial batch")
 
 			// Create new batch
-			batch, err = m.sender.NewMessageBatch(ctx, nil)
+			batch, err = sender.NewMessageBatch(ctx, nil)
 			if err != nil {
 				return fmt.Errorf("failed to create new message batch: %w", err)
 			}
@@ -201,112 +239,84 @@ func (m *Messaging) PublishBatch(ctx context.Context, topic string, messages []i
 			// Try adding message to new batch
 			if err := batch.AddMessage(msg, nil); err != nil {
 				m.logger.WithError(err).Warn("Failed to add message to new batch")
-				failedMessages = append(failedMessages, message)
+				continue
 			}
 		}
+		successCount++
 	}
 
 	// Send remaining messages
 	if batch.NumMessages() > 0 {
-		if err := m.sender.SendMessageBatch(ctx, batch, nil); err != nil {
+		if err := sender.SendMessageBatch(ctx, batch, nil); err != nil {
 			return fmt.Errorf("failed to send final message batch: %w", err)
 		}
-	}
-
-	// Retry failed messages individually
-	for _, msg := range failedMessages {
-		if err := m.PublishWithRetry(ctx, topic, msg, 3); err != nil {
-			m.logger.WithError(err).Error("Failed to publish message from batch")
-		}
-	}
-
-	return nil
-}
-
-// isRetryableError determines if an error should trigger a retry
-func (m *Messaging) isRetryableError(err error) bool {
-	// Add specific error checks for Azure Service Bus
-	// For now, we'll retry most errors except context cancellation
-	if err == context.Canceled || err == context.DeadlineExceeded {
-		return false
-	}
-	return true
-}
-
-// RecoverDeadLetters attempts to reprocess messages from dead letter queue
-func (m *Messaging) RecoverDeadLetters(ctx context.Context) error {
-	if m.deadLetterWAL == nil {
-		return fmt.Errorf("dead letter WAL not initialized")
-	}
-
-	entries, err := m.deadLetterWAL.ReadAll()
-	if err != nil {
-		return fmt.Errorf("failed to read dead letter entries: %w", err)
-	}
-
-	recovered := 0
-	failed := 0
-
-	for _, entry := range entries {
-		deadLetter, ok := entry.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		topic, _ := deadLetter["topic"].(string)
-		message := deadLetter["message"]
-
-		if err := m.Publish(ctx, topic, message); err != nil {
-			failed++
-			m.logger.WithError(err).WithField("topic", topic).
-				Warn("Failed to recover dead letter message")
-		} else {
-			recovered++
-		}
+		m.logger.WithField("count", batch.NumMessages()).Debug("Sent final batch")
 	}
 
 	m.logger.WithFields(logrus.Fields{
-		"recovered": recovered,
-		"failed":    failed,
-		"total":     len(entries),
-	}).Info("Dead letter recovery completed")
+		"total":   len(messages),
+		"success": successCount,
+		"queue":   queueName,
+	}).Info("Batch published to queue")
 
 	return nil
 }
 
 // Stats returns messaging statistics
 func (m *Messaging) Stats() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	stats := map[string]interface{}{
-		"connected": m.sender != nil,
+		"default_connected":    m.defaultClient != nil,
+		"organization_clients": len(m.orgClients),
+		"total_senders":        0,
 	}
 
-	if m.deadLetterWAL != nil {
-		stats["dead_letter"] = m.deadLetterWAL.Stats()
+	// Count total senders
+	for _, senders := range m.orgSenders {
+		stats["total_senders"] = stats["total_senders"].(int) + len(senders)
 	}
 
 	return stats
 }
 
-// Close gracefully shuts down the messaging client
+// Close gracefully shuts down all messaging clients
 func (m *Messaging) Close() error {
 	var errors []error
 
-	if m.sender != nil {
-		if err := m.sender.Close(context.Background()); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close sender: %w", err))
+	// Close default sender and client
+	if m.defaultSender != nil {
+		if err := m.defaultSender.Close(context.Background()); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close default sender: %w", err))
 		}
 	}
 
-	if m.client != nil {
-		if err := m.client.Close(context.Background()); err != nil {
+	if m.defaultClient != nil {
+		if err := m.defaultClient.Close(context.Background()); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close default client: %w", err))
+		}
+	}
+
+	// Close all organization senders
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for connStr, senders := range m.orgSenders {
+		for queueName, sender := range senders {
+			if err := sender.Close(context.Background()); err != nil {
+				errors = append(errors, fmt.Errorf("failed to close sender for queue %s: %w", queueName, err))
+			}
+		}
+		delete(m.orgSenders, connStr)
+	}
+
+	// Close all organization clients
+	for connStr, client := range m.orgClients {
+		if err := client.Close(context.Background()); err != nil {
 			errors = append(errors, fmt.Errorf("failed to close client: %w", err))
 		}
-	}
-
-	if m.deadLetterWAL != nil {
-		if err := m.deadLetterWAL.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close dead letter WAL: %w", err))
-		}
+		delete(m.orgClients, connStr)
 	}
 
 	if len(errors) > 0 {
@@ -314,6 +324,22 @@ func (m *Messaging) Close() error {
 	}
 
 	return nil
+}
+
+// GetMessageID implementation for Telemetry
+func (t *Telemetry) GetMessageID() string {
+	return t.MessageID
+}
+
+// GetTelemetryType implementation for Telemetry
+func (t *Telemetry) GetTelemetryType() string {
+	return t.TelemetryType
+}
+
+// Import Telemetry type to avoid circular dependency
+type Telemetry interface {
+	GetMessageID() string
+	GetTelemetryType() string
 }
 
 // Helper function to get string pointer

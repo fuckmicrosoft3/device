@@ -1,3 +1,4 @@
+// services/device/cmd/serve.go
 package cmd
 
 import (
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"example.com/backstage/services/device/config"
 	"example.com/backstage/services/device/internal/api"
 	"example.com/backstage/services/device/internal/core"
 	"example.com/backstage/services/device/internal/infrastructure"
@@ -20,7 +22,7 @@ import (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Starts the Device Service API server",
+	Short: "Starts the Device Management API server",
 	Long:  `Launches the HTTP server and MQTT client to handle device registration, telemetry ingestion, and OTA updates.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServer()
@@ -32,7 +34,7 @@ func init() {
 }
 
 func runServer() error {
-	logger.Info("Initializing Device Service...")
+	logger.Info("Initializing Device Management Service...")
 
 	// --- Infrastructure Setup ---
 	logger.Info("Connecting to database...")
@@ -61,7 +63,7 @@ func runServer() error {
 	// --- Data Store Setup ---
 	dataStore := core.NewDataStore(db.DB)
 
-	// --- Service Initialization ---
+	// --- Individual Service Initialization ---
 
 	// Device Management Service
 	deviceManagement := core.NewDeviceManagementService(dataStore, cache, logger)
@@ -79,6 +81,9 @@ func runServer() error {
 	// Update Management Service
 	updateManagement := core.NewUpdateManagementService(dataStore, firmwareManagement, logger, cfg.OTA)
 
+	// Wire the circular dependency
+	firmwareManagement.SetUpdateManagementService(updateManagement)
+
 	// Organization Service
 	organization := core.NewOrganizationService(dataStore, logger)
 
@@ -95,7 +100,12 @@ func runServer() error {
 		Authentication:     authentication,
 	}
 
-	// --- MQTT Setup ---
+	// Initialize pre-configured organizations
+	if err := initializeOrganizations(ctx, organization, cfg.Organizations); err != nil {
+		logger.WithError(err).Warn("Failed to initialize some organizations")
+	}
+
+	// --- MQTT Setup for Telemetry Ingestion ---
 	mqttSubscriber, err := setupMQTTSubscriber(telemetry, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed to setup MQTT subscriber")
@@ -169,7 +179,71 @@ func runServer() error {
 	}
 
 	// 4. Close infrastructure connections (deferred above)
-	logger.Info("Device Service shutdown complete")
+
+	logger.Info("Device Management Service shutdown complete")
+	return nil
+}
+
+func initializeOrganizations(ctx context.Context, orgService *core.OrganizationService, configs []config.OrganizationConfig) error {
+	for _, orgConfig := range configs {
+		logger.WithField("organization", orgConfig.Name).Info("Initializing organization")
+
+		// Check if organization already exists
+		orgs, err := orgService.ListOrganizations(ctx)
+		if err != nil {
+			logger.WithError(err).Error("Failed to list organizations")
+			continue
+		}
+
+		var existingOrg *core.Organization
+		for _, org := range orgs {
+			if org.Name == orgConfig.Name {
+				existingOrg = org
+				break
+			}
+		}
+
+		// Build queue mappings
+		queueMappings := core.QueueMappings{
+			Queues: make([]core.QueueMapping, 0, len(orgConfig.Queues)),
+		}
+		for _, queueConfig := range orgConfig.Queues {
+			queueMappings.Queues = append(queueMappings.Queues, core.QueueMapping{
+				QueueName:      queueConfig.Name,
+				TelemetryTypes: queueConfig.Types,
+			})
+		}
+
+		if existingOrg != nil {
+			// Update existing organization
+			existingOrg.ConnectionString = orgConfig.ConnectionString
+			existingOrg.QueueMappings = queueMappings
+			if err := orgService.UpdateOrganization(ctx, existingOrg); err != nil {
+				logger.WithError(err).WithField("organization", orgConfig.Name).
+					Error("Failed to update organization")
+			} else {
+				logger.WithField("organization", orgConfig.Name).
+					Info("Organization updated successfully")
+			}
+		} else {
+			// Create new organization
+			org := &core.Organization{
+				Name:             orgConfig.Name,
+				ConnectionString: orgConfig.ConnectionString,
+				QueueMappings:    queueMappings,
+				Active:           true,
+				DeviceLimit:      1000, // Default limit
+			}
+			if err := orgService.CreateOrganization(ctx, org); err != nil {
+				logger.WithError(err).WithField("organization", orgConfig.Name).
+					Error("Failed to create organization")
+			} else {
+				logger.WithField("organization", orgConfig.Name).
+					Info("Organization created successfully")
+			}
+		}
+	}
+
 	return nil
 }
 

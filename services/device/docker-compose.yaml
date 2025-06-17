@@ -55,11 +55,10 @@ services:
       DEVICE_DATABASE__DSN: "host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable"
       DEVICE_REDIS__ADDR: "redis:6379"
       DEVICE_MQTT__BROKER_URL: "tcp://mqtt-broker:1883"
-      DEVICE_STORAGE__WAL_PATH: "/data/wal"
-      DEVICE_STORAGE__DEAD_LETTER_PATH: "/data/dead_letter"
       DEVICE_FIRMWARE__STORAGE_PATH: "/data/firmware"
     volumes:
       - device_data:/data
+      - ./config/config.yaml:/app/config/config.yaml:ro
     depends_on:
       db:
         condition: service_healthy

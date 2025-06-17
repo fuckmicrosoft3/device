@@ -1,3 +1,4 @@
+// services/device/config/config.go
 package config
 
 import (
@@ -10,15 +11,15 @@ import (
 
 // Config holds the complete configuration for the service.
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	ServiceBus ServiceBusConfig `mapstructure:"service_bus"`
-	MQTT       *MQTTConfig      `mapstructure:"mqtt"`
-	Firmware   FirmwareConfig   `mapstructure:"firmware"`
-	OTA        OTAConfig        `mapstructure:"ota"`
-	Storage    StorageConfig    `mapstructure:"storage"`
-	Logger     *logrus.Logger
+	Server        ServerConfig         `mapstructure:"server"`
+	Database      DatabaseConfig       `mapstructure:"database"`
+	Redis         RedisConfig          `mapstructure:"redis"`
+	ServiceBus    ServiceBusConfig     `mapstructure:"service_bus"`
+	MQTT          *MQTTConfig          `mapstructure:"mqtt"`
+	Firmware      FirmwareConfig       `mapstructure:"firmware"`
+	OTA           OTAConfig            `mapstructure:"ota"`
+	Organizations []OrganizationConfig `mapstructure:"organizations"`
+	Logger        *logrus.Logger
 }
 
 // ServerConfig holds the HTTP server settings.
@@ -78,7 +79,7 @@ type FirmwareConfig struct {
 	PrivateKeyPath string `mapstructure:"private_key_path"`
 }
 
-// OTAConfig holds settings for updates.
+// OTAConfig holds settings for Over-The-Air updates.
 type OTAConfig struct {
 	ChunkSize            int           `mapstructure:"chunk_size"`
 	MaxConcurrentUpdates int           `mapstructure:"max_concurrent_updates"`
@@ -86,12 +87,17 @@ type OTAConfig struct {
 	RetryAttempts        int           `mapstructure:"retry_attempts"`
 }
 
-// StorageConfig holds settings for persistent storage
-type StorageConfig struct {
-	WALPath        string `mapstructure:"wal_path"`
-	DeadLetterPath string `mapstructure:"dead_letter_path"`
-	BackupPath     string `mapstructure:"backup_path"`
-	RetentionDays  int    `mapstructure:"retention_days"`
+// OrganizationConfig holds pre-configured organization settings
+type OrganizationConfig struct {
+	Name             string                    `mapstructure:"name"`
+	ConnectionString string                    `mapstructure:"connection_string"`
+	Queues           []OrganizationQueueConfig `mapstructure:"queues"`
+}
+
+// OrganizationQueueConfig holds queue configuration for an organization
+type OrganizationQueueConfig struct {
+	Name  string   `mapstructure:"name"`
+	Types []string `mapstructure:"types"`
 }
 
 // Load reads configuration from a file and environment variables.
@@ -134,11 +140,6 @@ func Load(configPath string) (*Config, error) {
 	viper.SetDefault("ota.max_concurrent_updates", 50)
 	viper.SetDefault("ota.download_timeout", "10m")
 	viper.SetDefault("ota.retry_attempts", 3)
-
-	viper.SetDefault("storage.wal_path", "/data/wal")
-	viper.SetDefault("storage.dead_letter_path", "/data/dead_letter")
-	viper.SetDefault("storage.backup_path", "/data/backup")
-	viper.SetDefault("storage.retention_days", 30)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {

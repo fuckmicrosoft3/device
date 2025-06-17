@@ -1,0 +1,86 @@
+# services/device/config/config.production.yaml
+# Production configuration for the device service.
+server:
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  dsn: "${DEVICE_DATABASE_DSN}" # Set via environment variable
+  max_open_conns: 50
+  max_idle_conns: 20
+  conn_max_lifetime: 10m
+  conn_max_idle_time: 15m
+  enable_tracing: true
+
+redis:
+  addr: "${DEVICE_REDIS_ADDR}"
+  password: "${DEVICE_REDIS_PASSWORD}"
+  db: 0
+  pool_size: 20
+  min_idle_conns: 10
+  dial_timeout: 10s
+
+service_bus:
+  connection_string: "" # Not used in production, using org-specific connections
+  queue_name: ""
+  max_retries: 5
+  retry_delay: 2s
+
+# MQTT configuration for telemetry ingestion
+mqtt:
+  broker_url: "${DEVICE_MQTT_BROKER_URL}"
+  client_id: "device-service-prod"
+  username: "${DEVICE_MQTT_USERNAME}"
+  password: "${DEVICE_MQTT_PASSWORD}"
+  qos: 1
+  clean_session: false
+  topics:
+    - "devices/+/telemetry"
+    - "devices/+/telemetry/batch"
+    - "devices/+/status"
+  keep_alive: 30s
+  connect_timeout: 15s
+  max_reconnect_delay: 5m
+
+firmware:
+  storage_path: "/data/firmware"
+  max_file_size: 52428800 # 50MB
+  signing_enabled: true
+  private_key_path: "/keys/firmware-signing.pem"
+
+ota:
+  chunk_size: 65536 # 64KB
+  max_concurrent_updates: 100
+  download_timeout: 30m
+  retry_attempts: 5
+
+# Production organizations
+organizations:
+  - name: "Nestle Cloud"
+    connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
+    queues:
+      - name: "nestle-production-erp-messages-devices"
+        types: ["check", "location", "gps", "subscribe", "file-upload", "loc"]
+      - name: "nestle-production-erp-aux-messages-devices"
+        types: ["audit_err", "audit_error", "echo", "error", "mem", "net", "time", "ue_sysinfo"]
+      - name: "nestle-production-erp-messages-transactions"
+        types: ["prec", "drop", "pay", "subscribe"]
+      - name: "nestle-production-te-messages-transactions"
+        types: ["drop", "prec", "refund", "subscribe"]
+
+  - name: "novek.app"
+    connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
+    queues:
+      - name: "novek-production-erp-messages-devices"
+        types: ["check", "location", "gps", "subscribe", "file-upload", "loc", "sensors"]
+      - name: "novek-production-erp-aux-messages-devices"
+        types: ["mem", "error", "calibrate", "net", "selection", "settings", "storage_stat", "time"]
+      - name: "novek-production-erp-messages-transactions"
+        types: ["prec", "drop", "pay", "subscribe", "refill", "auth-sys", "dispense"]
+      - name: "novek-production-te-messages-transactions"
+        types: ["drop", "prec", "refund", "subscribe"]
+      - name: "novek-production-dedicated-sales"
+        types: ["drop", "dispense", "prec"]
+      - name: "novek-production-cs-messages-canisters-sessions"
+        types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]
