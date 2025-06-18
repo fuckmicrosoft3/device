@@ -23,6 +23,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// =============================================================================
+// SHARED TYPES AND STRUCTS
+// =============================================================================
+
 // FirmwareMetadata contains metadata for firmware releases.
 type FirmwareMetadata struct {
 	Filename       string
@@ -31,7 +35,36 @@ type FirmwareMetadata struct {
 	ReleaseNotes   string
 }
 
-// --- Device Management Service Implementation ---
+// DeviceRegistrationResult represents the result of a single device registration attempt.
+type DeviceRegistrationResult struct {
+	Device *Device `json:"device,omitempty"`
+	Error  string  `json:"error,omitempty"`
+}
+
+// BatchRegistrationRequest represents a batch device registration request.
+type BatchRegistrationRequest struct {
+	DeviceUID       string `binding:"required"      json:"device_uid"`
+	OrganizationID  uint   `binding:"required"      json:"organization_id"`
+	SerialNumber    string `json:"serial_number"`
+	HardwareVersion string `json:"hardware_version"`
+}
+
+// BatchRegistrationResponse represents the response from batch device registration.
+type BatchRegistrationResponse struct {
+	Successful []DeviceRegistrationResult `json:"successful"`
+	Failed     []DeviceRegistrationResult `json:"failed"`
+}
+
+// CreateUpdateBatchRequest represents a request to create a batch update.
+type CreateUpdateBatchRequest struct {
+	Name       string `binding:"required" json:"name"`
+	FirmwareID uint   `binding:"required" json:"firmware_id"`
+	DeviceIDs  []uint `binding:"required" json:"device_ids"`
+}
+
+// =============================================================================
+// DEVICE MANAGEMENT SERVICE
+// =============================================================================
 
 type DeviceManagementService struct {
 	store  DataStore
@@ -87,6 +120,124 @@ func (s *DeviceManagementService) RegisterDevice(ctx context.Context, device *De
 	}).Info("Device registered successfully")
 
 	return nil
+}
+
+func (s *DeviceManagementService) RegisterDeviceBatch(ctx context.Context, requests []BatchRegistrationRequest) (*BatchRegistrationResponse, error) {
+	response := &BatchRegistrationResponse{
+		Successful: make([]DeviceRegistrationResult, 0),
+		Failed:     make([]DeviceRegistrationResult, 0),
+	}
+
+	// Validate all devices first
+	devices := make([]*Device, 0, len(requests))
+	organizations := make(map[uint]*Organization)
+
+	for _, req := range requests {
+		device := &Device{
+			DeviceUID:       req.DeviceUID,
+			OrganizationID:  req.OrganizationID,
+			SerialNumber:    req.SerialNumber,
+			HardwareVersion: req.HardwareVersion,
+			Active:          true,
+			UpdatesEnabled:  true,
+		}
+
+		if device.DeviceUID == "" {
+			device.DeviceUID = uuid.New().String()
+		}
+
+		if device.SerialNumber == "" {
+			device.SerialNumber = device.DeviceUID
+		}
+
+		devices = append(devices, device)
+	}
+
+	// Process registration within a transaction
+	err := s.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
+		for _, device := range devices {
+			// Check if device already exists
+			existing, err := tx.GetDeviceByUID(ctx, device.DeviceUID)
+			if err == nil && existing != nil {
+				response.Failed = append(response.Failed, DeviceRegistrationResult{
+					Device: device,
+					Error:  "device already exists",
+				})
+				continue
+			}
+
+			// Validate organization (cache the result)
+			var org *Organization
+			if cachedOrg, exists := organizations[device.OrganizationID]; exists {
+				org = cachedOrg
+			} else {
+				org, err = tx.GetOrganization(ctx, device.OrganizationID)
+				if err != nil {
+					response.Failed = append(response.Failed, DeviceRegistrationResult{
+						Device: device,
+						Error:  "organization not found",
+					})
+					continue
+				}
+				if !org.Active {
+					response.Failed = append(response.Failed, DeviceRegistrationResult{
+						Device: device,
+						Error:  "organization inactive",
+					})
+					continue
+				}
+				organizations[device.OrganizationID] = org
+			}
+
+			// Check device limit for this organization
+			existingDevices, err := tx.ListDevicesByOrganization(ctx, org.ID)
+			if err == nil && len(existingDevices) >= org.DeviceLimit {
+				response.Failed = append(response.Failed, DeviceRegistrationResult{
+					Device: device,
+					Error:  "organization device limit reached",
+				})
+				continue
+			}
+
+			// Set organization name
+			device.OrganizationName = org.Name
+
+			// Create device
+			if err := tx.CreateDevice(ctx, device); err != nil {
+				response.Failed = append(response.Failed, DeviceRegistrationResult{
+					Device: device,
+					Error:  fmt.Sprintf("failed to create device: %v", err),
+				})
+				continue
+			}
+
+			response.Successful = append(response.Successful, DeviceRegistrationResult{
+				Device: device,
+			})
+
+			// Cache the device
+			s.cacheDevice(ctx, device)
+		}
+
+		// If all devices failed, return an error to rollback the transaction
+		if len(response.Successful) == 0 {
+			return errors.New("all device registrations failed")
+		}
+
+		return nil
+	})
+
+	if err != nil && len(response.Successful) == 0 {
+		return nil, fmt.Errorf("batch registration failed: %w", err)
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"successful": len(response.Successful),
+		"failed":     len(response.Failed),
+		"total":      len(requests),
+	}).Info("Batch device registration completed")
+
+	return response, nil
 }
 
 func (s *DeviceManagementService) GetDevice(ctx context.Context, id uint) (*Device, error) {
@@ -177,7 +328,9 @@ func (s *DeviceManagementService) getCachedDevice(ctx context.Context, uid strin
 	return &device, nil
 }
 
-// --- Telemetry Service Implementation ---
+// =============================================================================
+// TELEMETRY SERVICE
+// =============================================================================
 
 type TelemetryService struct {
 	store       DataStore
@@ -201,303 +354,141 @@ func NewTelemetryService(store DataStore, messaging *infrastructure.Messaging, l
 	return svc
 }
 
-func (s *TelemetryService) IngestTelemetry(ctx context.Context, device *Device, rawPayload json.RawMessage) error {
-	// Parse raw JSON to extract "ev" field
-	var payloadMap map[string]interface{}
-	if err := json.Unmarshal(rawPayload, &payloadMap); err != nil {
-		return BusinessError{"TELEMETRY_002", "invalid JSON payload"}
+func (s *TelemetryService) IngestTelemetry(ctx context.Context, device *Device, telemetryData json.RawMessage) error {
+	// Parse telemetry to extract type
+	var payload map[string]interface{}
+	if err := json.Unmarshal(telemetryData, &payload); err != nil {
+		return fmt.Errorf("invalid telemetry format: %w", err)
 	}
 
-	// Extract and validate "ev" field
-	evValue, exists := payloadMap["ev"]
-	if !exists {
-		return BusinessError{"TELEMETRY_003", "missing required field 'ev' in payload"}
-	}
-
-	telemetryType, ok := evValue.(string)
-	if !ok || telemetryType == "" {
-		return BusinessError{"TELEMETRY_004", "field 'ev' must be a non-empty string"}
-	}
-
-	// Validate device is active
-	if !device.Active {
-		return ErrDeviceInactive
-	}
-
-	// Generate server-side UUID
-	telemetryID := uuid.New().String()
-
-	// Add UUID to payload
-	payloadMap["uuid"] = telemetryID
-
-	// Re-marshal enriched payload
-	enrichedPayload, err := json.Marshal(payloadMap)
-	if err != nil {
-		return fmt.Errorf("failed to marshal enriched payload: %w", err)
+	telemetryType, ok := payload["ev"].(string)
+	if !ok {
+		return BusinessError{"TELEMETRY_002", "missing or invalid 'ev' field in telemetry"}
 	}
 
 	// Create telemetry record
 	telemetry := &Telemetry{
-		ID:                 telemetryID,
+		ID:                 uuid.New().String(),
 		DeviceID:           device.ID,
 		DeviceUID:          device.DeviceUID,
 		DeviceSerialNumber: device.SerialNumber,
 		TelemetryType:      telemetryType,
-		Payload:            enrichedPayload,
+		Payload:            telemetryData,
 		ReceivedAt:         time.Now(),
-		Published:          false,
-		PublishedAt:        nil,
-		ProcessingError:    false,
 	}
 
-	// Determine target queue based on organization and telemetry type
-	targetQueue, err := s.queueRouter.GetQueueForTelemetry(device.OrganizationName, telemetryType)
-	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"organization":   device.OrganizationName,
-			"telemetry_type": telemetryType,
-		}).Warn("No queue route found for telemetry type")
-		telemetry.ProcessingError = true
-		telemetry.ProcessingErrorMessage = "no queue route configured"
-	} else {
-		telemetry.PublishedToQueue = targetQueue
-	}
-
-	// Enqueue for async processing with reliability
-	return s.processor.Enqueue(telemetry)
-}
-
-func (s *TelemetryService) IngestBatch(ctx context.Context, device *Device, rawPayloads []json.RawMessage) error {
-	var telemetryBatch []*Telemetry
-
-	for _, rawPayload := range rawPayloads {
-		// Parse raw JSON to extract "ev" field
-		var payloadMap map[string]interface{}
-		if err := json.Unmarshal(rawPayload, &payloadMap); err != nil {
-			s.logger.WithError(err).Warn("Invalid JSON in batch, skipping")
-			continue
-		}
-
-		// Extract and validate "ev" field
-		evValue, exists := payloadMap["ev"]
-		if !exists {
-			s.logger.Warn("Missing 'ev' field in batch payload, skipping")
-			continue
-		}
-
-		telemetryType, ok := evValue.(string)
-		if !ok || telemetryType == "" {
-			s.logger.Warn("Invalid 'ev' field in batch payload, skipping")
-			continue
-		}
-
-		// Generate server-side UUID
-		telemetryID := uuid.New().String()
-
-		// Add UUID to payload
-		payloadMap["uuid"] = telemetryID
-
-		// Re-marshal enriched payload
-		enrichedPayload, err := json.Marshal(payloadMap)
-		if err != nil {
-			s.logger.WithError(err).Warn("Failed to marshal enriched payload, skipping")
-			continue
-		}
-
-		// Create telemetry record
-		telemetry := &Telemetry{
-			ID:                 telemetryID,
-			DeviceID:           device.ID,
-			DeviceUID:          device.DeviceUID,
-			DeviceSerialNumber: device.SerialNumber,
-			TelemetryType:      telemetryType,
-			Payload:            enrichedPayload,
-			ReceivedAt:         time.Now(),
-			Published:          false,
-			PublishedAt:        nil,
-			ProcessingError:    false,
-		}
-
-		// Determine target queue
-		targetQueue, err := s.queueRouter.GetQueueForTelemetry(device.OrganizationName, telemetryType)
-		if err != nil {
-			telemetry.ProcessingError = true
-			telemetry.ProcessingErrorMessage = "no queue route configured"
-		} else {
-			telemetry.PublishedToQueue = targetQueue
-		}
-
-		telemetryBatch = append(telemetryBatch, telemetry)
-	}
-
-	// Process valid telemetry
-	for _, telemetry := range telemetryBatch {
-		if err := s.processor.Enqueue(telemetry); err != nil {
-			s.logger.WithError(err).WithField("telemetry_id", telemetry.ID).
-				Warn("Failed to enqueue telemetry from batch")
-		}
-	}
-
-	return nil
+	// Queue for processing
+	return s.processor.QueueTelemetry(telemetry)
 }
 
 func (s *TelemetryService) GetDeviceTelemetry(ctx context.Context, deviceID uint, limit int) ([]*Telemetry, error) {
 	return s.store.GetDeviceTelemetry(ctx, deviceID, limit)
 }
 
+func (s *TelemetryService) IngestBatch(ctx context.Context, device *Device, messages []json.RawMessage) error {
+	for i, msg := range messages {
+		// Ingest each telemetry message for the authenticated device
+		if err := s.IngestTelemetry(ctx, device, msg); err != nil {
+			s.logger.WithError(err).WithFields(logrus.Fields{
+				"device_uid":    device.DeviceUID,
+				"message_index": i,
+			}).Error("Failed to ingest batch telemetry message")
+			// Continue processing other messages even if one fails
+		}
+	}
+
+	return nil
+}
+
 func (s *TelemetryService) GetIngestionStats() map[string]interface{} {
-	return s.processor.Stats()
+	if s.processor != nil {
+		return s.processor.Stats()
+	}
+	return map[string]interface{}{
+		"status": "processor not available",
+	}
 }
 
 func (s *TelemetryService) Stop() {
-	s.processor.Stop()
+	if s.processor != nil {
+		s.processor.Stop()
+	}
 }
 
-// QueueRouter handles routing telemetry to appropriate queues.
-type QueueRouter struct {
-	routes map[string]map[string]string // organization -> telemetryType -> queueName
-	logger *logrus.Logger
-}
+// =============================================================================
+// TELEMETRY PROCESSOR (Supporting structs for TelemetryService)
+// =============================================================================
 
-func NewQueueRouter(cfg config.QueueRoutingConfig, logger *logrus.Logger) *QueueRouter {
-	router := &QueueRouter{
-		routes: make(map[string]map[string]string),
-		logger: logger,
-	}
-
-	// Build routing table from configuration
-	for _, orgConfig := range cfg.Organizations {
-		orgRoutes := make(map[string]string)
-		for _, queueRoute := range orgConfig.QueueRoutes {
-			for _, telemetryType := range queueRoute.TelemetryTypes {
-				orgRoutes[telemetryType] = queueRoute.QueueName
-			}
-		}
-		router.routes[orgConfig.OrganizationName] = orgRoutes
-	}
-
-	return router
-}
-
-func (r *QueueRouter) GetQueueForTelemetry(organizationName, telemetryType string) (string, error) {
-	orgRoutes, exists := r.routes[organizationName]
-	if !exists {
-		return "", fmt.Errorf("no routes configured for organization: %s", organizationName)
-	}
-
-	queueName, exists := orgRoutes[telemetryType]
-	if !exists {
-		return "", fmt.Errorf("no queue configured for telemetry type: %s", telemetryType)
-	}
-
-	return queueName, nil
-}
-
-// TelemetryProcessor handles async telemetry processing with reliability.
 type TelemetryProcessor struct {
-	store         DataStore
-	messaging     *infrastructure.Messaging
-	logger        *logrus.Logger
-	queueRouter   *QueueRouter
-	queue         chan *Telemetry
-	retryQueue    chan *RetryItem
-	persistentWAL *infrastructure.WAL
-	workers       int
-	wg            sync.WaitGroup
-	shutdown      chan struct{}
-	stats         *ProcessorStats
+	store       DataStore
+	messaging   *infrastructure.Messaging
+	logger      *logrus.Logger
+	queueRouter *QueueRouter
+	queue       chan *Telemetry
+	retryQueue  chan *RetryItem
+	shutdown    chan struct{}
+	wg          sync.WaitGroup
+	workers     int
+	stats       *ProcessorStats
 }
 
 type RetryItem struct {
 	Telemetry   *Telemetry
 	RetryCount  int
-	LastError   error
 	NextRetryAt time.Time
 }
 
 type ProcessorStats struct {
-	mu              sync.RWMutex
-	Processed       uint64
-	Failed          uint64
-	Retried         uint64
-	QueueDepth      int
-	RetryQueueDepth int
+	mu        sync.RWMutex
+	Processed int64
+	Failed    int64
+	Retried   int64
 }
 
 func NewTelemetryProcessor(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger, queueRouter *QueueRouter) *TelemetryProcessor {
-	// Initialize Write-Ahead Log for persistence
-	wal, err := infrastructure.NewWAL("/data/telemetry-wal")
-	if err != nil {
-		logger.WithError(err).Error("Failed to initialize WAL, using in-memory fallback")
-	}
-
 	return &TelemetryProcessor{
-		store:         store,
-		messaging:     messaging,
-		logger:        logger,
-		queueRouter:   queueRouter,
-		queue:         make(chan *Telemetry, 10000),
-		retryQueue:    make(chan *RetryItem, 5000),
-		persistentWAL: wal,
-		shutdown:      make(chan struct{}),
-		stats:         &ProcessorStats{},
+		store:       store,
+		messaging:   messaging,
+		logger:      logger,
+		queueRouter: queueRouter,
+		queue:       make(chan *Telemetry, 1000),
+		retryQueue:  make(chan *RetryItem, 500),
+		shutdown:    make(chan struct{}),
+		stats:       &ProcessorStats{},
 	}
 }
 
 func (p *TelemetryProcessor) Start(workers int) {
 	p.workers = workers
-
-	// Start main workers
 	for i := range workers {
 		p.wg.Add(1)
 		go p.worker(i)
 	}
 
-	// Start retry worker
 	p.wg.Add(1)
 	go p.retryWorker()
 
-	// Start WAL recovery
-	if p.persistentWAL != nil {
-		p.wg.Add(1)
-		go p.recoverFromWAL()
-	}
-
-	p.logger.Infof("Started %d telemetry processor workers", workers)
+	p.logger.WithField("workers", workers).Info("Telemetry processor started")
 }
 
 func (p *TelemetryProcessor) Stop() {
 	close(p.shutdown)
 	p.wg.Wait()
-	if p.persistentWAL != nil {
-		p.persistentWAL.Close()
-	}
+	p.logger.Info("Telemetry processor stopped")
 }
 
-func (p *TelemetryProcessor) Enqueue(telemetry *Telemetry) error {
-	// Write to WAL first for durability
-	if p.persistentWAL != nil {
-		if err := p.persistentWAL.Write(telemetry); err != nil {
-			p.logger.WithError(err).Warn("Failed to write to WAL")
-		}
-	}
-
+func (p *TelemetryProcessor) QueueTelemetry(telemetry *Telemetry) error {
 	select {
 	case p.queue <- telemetry:
 		return nil
 	default:
-		// Queue full, try to persist for later processing
-		return p.persistToFallback(telemetry)
+		// Queue is full, persist for later processing
+		if err := p.store.SaveTelemetry(context.Background(), telemetry); err != nil {
+			p.logger.WithError(err).Error("Failed to persist telemetry when queue full")
+			return err
+		}
+		return BusinessError{"TELEMETRY_001", "telemetry queue full, message persisted for later processing"}
 	}
-}
-
-func (p *TelemetryProcessor) persistToFallback(telemetry *Telemetry) error {
-	// Implement fallback persistence (e.g., local file, secondary queue)
-	p.logger.Warn("Main queue full, persisting to fallback")
-	p.updateStats(func(s *ProcessorStats) {
-		s.Failed++
-	})
-	return BusinessError{"TELEMETRY_001", "telemetry queue full, message persisted for later processing"}
 }
 
 func (p *TelemetryProcessor) Stats() map[string]interface{} {
@@ -598,29 +589,28 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 			return fmt.Errorf("failed to save telemetry: %w", err)
 		}
 
-		// Update device heartbeat
-		if err := tx.UpdateDeviceHeartbeat(ctx, telemetry.DeviceID); err != nil {
-			return fmt.Errorf("failed to update heartbeat: %w", err)
-		}
+		// Route to appropriate queue
+		if p.messaging != nil {
+			queueName, err := p.queueRouter.RouteMessage(telemetry)
+			if err != nil {
+				p.logger.WithError(err).WithField("telemetry_id", telemetry.ID).Error("Failed to route telemetry")
+				return err
+			}
 
-		// Publish to messaging system if configured and no processing error
-		if p.messaging != nil && !telemetry.ProcessingError && telemetry.PublishedToQueue != "" {
-			// Publish to the specific queue determined by router
-			if err := p.messaging.PublishToQueue(ctx, telemetry.PublishedToQueue, telemetry, 3); err != nil {
-				// Log but don't fail the transaction
-				p.logger.WithError(err).WithFields(logrus.Fields{
-					"queue":          telemetry.PublishedToQueue,
-					"telemetry_type": telemetry.TelemetryType,
-					"telemetry_id":   telemetry.ID,
-				}).Warn("Failed to publish to messaging system")
-			} else {
-				// Mark as published
+			if queueName != "" {
+				if err := p.messaging.PublishToQueue(ctx, queueName, telemetry, 3); err != nil {
+					return fmt.Errorf("failed to send to queue %s: %w", queueName, err)
+				}
+
+				// Update published status
 				now := time.Now()
-				telemetry.Published = true
-				telemetry.PublishedAt = &now
-				if err := tx.UpdateTelemetryPublishStatus(ctx, telemetry.ID, true, &now, telemetry.PublishedToQueue); err != nil {
+				if err := tx.UpdateTelemetryPublishStatus(ctx, telemetry.ID, true, &now, queueName); err != nil {
 					return fmt.Errorf("failed to update publish status: %w", err)
 				}
+
+				telemetry.Published = true
+				telemetry.PublishedAt = &now
+				telemetry.PublishedToQueue = queueName
 			}
 		}
 
@@ -628,99 +618,76 @@ func (p *TelemetryProcessor) processTelemetry(telemetry *Telemetry, retryCount i
 	})
 
 	if err != nil {
-		p.handleProcessingError(telemetry, err, retryCount)
+		p.updateStats(func(s *ProcessorStats) { s.Failed++ })
+
+		// Retry logic
+		if retryCount < 3 {
+			retryDelay := time.Duration(1<<retryCount) * time.Second
+			retryItem := &RetryItem{
+				Telemetry:   telemetry,
+				RetryCount:  retryCount + 1,
+				NextRetryAt: time.Now().Add(retryDelay),
+			}
+
+			select {
+			case p.retryQueue <- retryItem:
+				p.updateStats(func(s *ProcessorStats) { s.Retried++ })
+			default:
+				p.logger.Error("Retry queue full, dropping retry")
+			}
+		}
+
+		p.logger.WithError(err).WithField("telemetry_id", telemetry.ID).Error("Failed to process telemetry")
 	} else {
-		// Remove from WAL on success
-		if p.persistentWAL != nil {
-			p.persistentWAL.Remove(telemetry.ID)
-		}
-		p.updateStats(func(s *ProcessorStats) {
-			s.Processed++
-		})
-
-		p.logger.WithFields(logrus.Fields{
-			"telemetry_id":   telemetry.ID,
-			"telemetry_type": telemetry.TelemetryType,
-			"queue":          telemetry.PublishedToQueue,
-			"published":      telemetry.Published,
-		}).Debug("Telemetry processed successfully")
+		p.updateStats(func(s *ProcessorStats) { s.Processed++ })
 	}
 }
 
-func (p *TelemetryProcessor) handleProcessingError(telemetry *Telemetry, err error, retryCount int) {
-	p.logger.WithError(err).WithFields(logrus.Fields{
-		"message_id":  telemetry.ID,
-		"retry_count": retryCount,
-	}).Error("Failed to process telemetry")
+// =============================================================================
+// QUEUE ROUTER (Supporting structs for TelemetryService)
+// =============================================================================
 
-	if retryCount < 5 {
-		// Exponential backoff
-		nextRetry := time.Now().Add(time.Duration(1<<uint(retryCount)) * time.Second)
-		retryItem := &RetryItem{
-			Telemetry:   telemetry,
-			RetryCount:  retryCount + 1,
-			LastError:   err,
-			NextRetryAt: nextRetry,
-		}
+type QueueRouter struct {
+	config config.QueueRoutingConfig
+	logger *logrus.Logger
+}
 
-		select {
-		case p.retryQueue <- retryItem:
-			p.updateStats(func(s *ProcessorStats) {
-				s.Retried++
-			})
-		default:
-			// Retry queue full, persist to dead letter
-			p.persistToDeadLetter(telemetry, err)
-		}
-	} else {
-		// Max retries exceeded, move to dead letter
-		p.persistToDeadLetter(telemetry, err)
+func NewQueueRouter(config config.QueueRoutingConfig, logger *logrus.Logger) *QueueRouter {
+	return &QueueRouter{
+		config: config,
+		logger: logger,
 	}
 }
 
-func (p *TelemetryProcessor) persistToDeadLetter(telemetry *Telemetry, err error) {
-	// Implement dead letter persistence
-	p.logger.WithError(err).WithField("message_id", telemetry.ID).
-		Error("Moving telemetry to dead letter queue")
-
-	p.updateStats(func(s *ProcessorStats) {
-		s.Failed++
-	})
-
-	// Could write to a separate table or file
-	// For now, just ensure it's in the WAL for manual recovery
-}
-
-func (p *TelemetryProcessor) recoverFromWAL() {
-	defer p.wg.Done()
-
-	if p.persistentWAL == nil {
-		return
-	}
-
-	messages, err := p.persistentWAL.ReadAll()
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to recover from WAL")
-		return
-	}
-
-	p.logger.Infof("Recovering %d messages from WAL", len(messages))
-
-	for _, msg := range messages {
-		telemetry, ok := msg.(*Telemetry)
-		if !ok {
-			continue
-		}
-
-		select {
-		case p.queue <- telemetry:
-		default:
-			p.logger.Warn("Queue full during WAL recovery")
+func (r *QueueRouter) RouteMessage(telemetry *Telemetry) (string, error) {
+	// Find organization config
+	var orgConfig *config.QueueConfig
+	for _, org := range r.config.Organizations {
+		if org.OrganizationName == telemetry.DeviceUID {
+			orgConfig = &org
+			break
 		}
 	}
+
+	if orgConfig == nil {
+		return "", errors.New("no queue configuration found for organization")
+	}
+
+	// Find appropriate queue for telemetry type
+	for _, route := range orgConfig.QueueRoutes {
+		for _, telType := range route.TelemetryTypes {
+			if telType == telemetry.TelemetryType {
+				return route.QueueName, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no queue route found for telemetry type: %s", telemetry.TelemetryType)
 }
 
-// --- Firmware Management Service Implementation ---
+// =============================================================================
+// FIRMWARE MANAGEMENT SERVICE
+// =============================================================================
 
 type FirmwareManagementService struct {
 	store       DataStore
@@ -746,9 +713,9 @@ func NewFirmwareManagementService(store DataStore, logger *logrus.Logger, cfg co
 		svc.signingKey = key
 	}
 
-	// Ensure firmware storage exists
+	// Ensure storage directory exists
 	if err := os.MkdirAll(cfg.StoragePath, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create firmware storage: %w", err)
+		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
 	return svc, nil
@@ -906,15 +873,18 @@ func (s *FirmwareManagementService) GetLatestRelease(ctx context.Context, channe
 	return release, nil
 }
 
-// --- Update Management Service Implementation ---
+// =============================================================================
+// UPDATE MANAGEMENT SERVICE
+// =============================================================================
 
 type UpdateManagementService struct {
-	store       DataStore
-	firmwareSvc *FirmwareManagementService
-	logger      *logrus.Logger
-	chunkSize   int
-	chunkCache  map[string]*cachedChunk
-	cacheMu     sync.RWMutex
+	store           DataStore
+	firmwareSvc     *FirmwareManagementService
+	logger          *logrus.Logger
+	chunkSize       int
+	chunkCache      map[string]*cachedChunk
+	cacheMu         sync.RWMutex
+	processingMutex sync.Mutex
 }
 
 type cachedChunk struct {
@@ -1032,7 +1002,7 @@ func (s *UpdateManagementService) GetUpdateSession(ctx context.Context, sessionI
 	session, err := s.store.GetUpdateSession(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, BusinessError{"OTA_005", "update session not found"}
+			return nil, ErrUpdateSessionNotFound
 		}
 		return nil, err
 	}
@@ -1144,13 +1114,274 @@ func (s *UpdateManagementService) CompleteUpdate(ctx context.Context, sessionID 
 	return nil
 }
 
-func (s *UpdateManagementService) GetUpdateMetrics() map[string]interface{} {
-	// This would aggregate metrics from the database
-	return map[string]interface{}{
-		"cache_size": len(s.chunkCache),
-		"timestamp":  time.Now(),
+// --- Enhanced OTA Methods ---
+
+func (s *UpdateManagementService) AcknowledgeUpdate(ctx context.Context, sessionID string) error {
+	session, err := s.store.GetUpdateSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUpdateSessionNotFound
+		}
+		return err
 	}
+
+	if session.UpdateStatus != UpdateStatusInitiated {
+		return BusinessError{
+			"UPDATE_009",
+			"cannot acknowledge update in status " + session.UpdateStatus,
+		}
+	}
+
+	session.UpdateStatus = UpdateStatusAcknowledged
+	if err := s.store.UpdateUpdateSession(ctx, session); err != nil {
+		return fmt.Errorf("failed to update session status: %w", err)
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"session_id": sessionID,
+		"device_id":  session.DeviceID,
+	}).Info("Update acknowledged by device")
+
+	return nil
 }
+
+func (s *UpdateManagementService) CompleteFlash(ctx context.Context, sessionID string) error {
+	return s.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
+		session, err := tx.GetUpdateSession(ctx, sessionID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUpdateSessionNotFound
+			}
+			return err
+		}
+
+		if session.UpdateStatus != UpdateStatusDownloading {
+			return BusinessError{
+				"UPDATE_010",
+				"cannot complete flash in status " + session.UpdateStatus,
+			}
+		}
+
+		// Get the device and firmware info
+		device, err := tx.GetDevice(ctx, session.DeviceID)
+		if err != nil {
+			return fmt.Errorf("failed to get device: %w", err)
+		}
+
+		firmware, err := tx.GetFirmwareRelease(ctx, session.FirmwareID)
+		if err != nil {
+			return fmt.Errorf("failed to get firmware: %w", err)
+		}
+
+		// Update session status
+		session.UpdateStatus = UpdateStatusFlashed
+		now := time.Now()
+		session.CompletedAt = &now
+		session.ProgressPercent = 100
+
+		if err := tx.UpdateUpdateSession(ctx, session); err != nil {
+			return fmt.Errorf("failed to update session: %w", err)
+		}
+
+		// Update device firmware version
+		device.FirmwareVersion = firmware.Version
+		if err := tx.UpdateDevice(ctx, device); err != nil {
+			return fmt.Errorf("failed to update device firmware version: %w", err)
+		}
+
+		s.logger.WithFields(logrus.Fields{
+			"session_id":       sessionID,
+			"device_id":        session.DeviceID,
+			"firmware_version": firmware.Version,
+		}).Info("Firmware flash completed")
+
+		return nil
+	})
+}
+
+// --- Batch Update Methods ---
+
+func (s *UpdateManagementService) CreateUpdateBatch(ctx context.Context, req CreateUpdateBatchRequest) (*UpdateBatch, error) {
+	// Validate firmware exists
+	firmware, err := s.store.GetFirmwareRelease(ctx, req.FirmwareID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFirmwareNotFound
+		}
+		return nil, err
+	}
+
+	if firmware.ReleaseStatus != ReleaseStatusApproved {
+		return nil, ErrFirmwareNotActive
+	}
+
+	// Validate devices exist
+	validDeviceIDs := make([]uint, 0)
+	for _, deviceID := range req.DeviceIDs {
+		device, err := s.store.GetDevice(ctx, deviceID)
+		if err != nil {
+			s.logger.WithFields(logrus.Fields{
+				"device_id": deviceID,
+				"error":     err,
+			}).Warn("Skipping invalid device in batch")
+			continue
+		}
+
+		if !device.Active || !device.UpdatesEnabled {
+			s.logger.WithFields(logrus.Fields{
+				"device_id": deviceID,
+				"active":    device.Active,
+				"updates":   device.UpdatesEnabled,
+			}).Warn("Skipping inactive device or updates disabled")
+			continue
+		}
+
+		validDeviceIDs = append(validDeviceIDs, deviceID)
+	}
+
+	if len(validDeviceIDs) == 0 {
+		return nil, BusinessError{"BATCH_001", "no valid devices found for batch update"}
+	}
+
+	var batch *UpdateBatch
+	err = s.store.WithTransaction(ctx, func(ctx context.Context, tx DataStore) error {
+		// Create batch
+		batch = &UpdateBatch{
+			Name:       req.Name,
+			FirmwareID: req.FirmwareID,
+			Status:     BatchStatusPending,
+		}
+
+		if err := tx.CreateUpdateBatch(ctx, batch); err != nil {
+			return fmt.Errorf("failed to create update batch: %w", err)
+		}
+
+		// Create batch device records
+		batchDevices := make([]*UpdateBatchDevice, 0, len(validDeviceIDs))
+		for _, deviceID := range validDeviceIDs {
+			batchDevice := &UpdateBatchDevice{
+				UpdateBatchID: batch.ID,
+				DeviceID:      deviceID,
+				Status:        BatchDeviceStatusPending,
+			}
+			batchDevices = append(batchDevices, batchDevice)
+		}
+
+		if err := tx.CreateUpdateBatchDevices(ctx, batchDevices); err != nil {
+			return fmt.Errorf("failed to create batch devices: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Start background processing
+	go s.processBatch(context.Background(), batch.ID)
+
+	s.logger.WithFields(logrus.Fields{
+		"batch_id":     batch.ID,
+		"batch_name":   batch.Name,
+		"firmware_id":  batch.FirmwareID,
+		"device_count": len(validDeviceIDs),
+	}).Info("Update batch created")
+
+	return s.store.GetUpdateBatch(ctx, batch.ID)
+}
+
+func (s *UpdateManagementService) ListUpdateBatches(ctx context.Context) ([]*UpdateBatch, error) {
+	return s.store.ListUpdateBatches(ctx)
+}
+
+func (s *UpdateManagementService) GetUpdateBatch(ctx context.Context, id uint) (*UpdateBatch, error) {
+	batch, err := s.store.GetUpdateBatch(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, BusinessError{"BATCH_002", "update batch not found"}
+		}
+		return nil, err
+	}
+	return batch, nil
+}
+
+func (s *UpdateManagementService) processBatch(ctx context.Context, batchID uint) {
+	s.processingMutex.Lock()
+	defer s.processingMutex.Unlock()
+
+	batch, err := s.store.GetUpdateBatch(ctx, batchID)
+	if err != nil {
+		s.logger.WithError(err).WithField("batch_id", batchID).Error("Failed to get batch for processing")
+		return
+	}
+
+	// Update batch status to in progress
+	batch.Status = BatchStatusInProgress
+	if err := s.store.UpdateUpdateBatch(ctx, batch); err != nil {
+		s.logger.WithError(err).WithField("batch_id", batchID).Error("Failed to update batch status")
+		return
+	}
+
+	// Get all batch devices
+	batchDevices, err := s.store.GetUpdateBatchDevices(ctx, batchID)
+	if err != nil {
+		s.logger.WithError(err).WithField("batch_id", batchID).Error("Failed to get batch devices")
+		return
+	}
+
+	successCount := 0
+	failureCount := 0
+
+	// Process each device
+	for _, batchDevice := range batchDevices {
+		if batchDevice.Status != BatchDeviceStatusPending {
+			continue
+		}
+
+		// Initiate update for device
+		session, err := s.InitiateUpdate(ctx, batchDevice.DeviceID, batch.FirmwareID)
+		if err != nil {
+			// Mark device as failed
+			batchDevice.Status = BatchDeviceStatusFailed
+			failureCount++
+			s.logger.WithFields(logrus.Fields{
+				"batch_id":  batchID,
+				"device_id": batchDevice.DeviceID,
+				"error":     err,
+			}).Error("Failed to initiate update for batch device")
+		} else {
+			// Mark device as initiated and link to session
+			batchDevice.Status = BatchDeviceStatusInitiated
+			batchDevice.UpdateSessionID = &session.SessionID
+			successCount++
+		}
+
+		// Update batch device status
+		if err := s.store.UpdateUpdateBatchDevice(ctx, batchDevice); err != nil {
+			s.logger.WithError(err).WithField("batch_device_id", batchDevice.ID).Error("Failed to update batch device status")
+		}
+	}
+
+	// Update overall batch status
+	if successCount > 0 {
+		batch.Status = BatchStatusInProgress
+	} else {
+		batch.Status = BatchStatusFailed
+	}
+
+	if err := s.store.UpdateUpdateBatch(ctx, batch); err != nil {
+		s.logger.WithError(err).WithField("batch_id", batchID).Error("Failed to update final batch status")
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"batch_id":      batchID,
+		"success_count": successCount,
+		"failure_count": failureCount,
+		"total_devices": len(batchDevices),
+	}).Info("Batch processing completed")
+}
+
+// --- Cache Management ---
 
 func (s *UpdateManagementService) getCachedChunk(key string) []byte {
 	s.cacheMu.RLock()
@@ -1189,7 +1420,21 @@ func (s *UpdateManagementService) cleanupCache() {
 	}
 }
 
-// --- Organization Service Implementation ---
+func (s *UpdateManagementService) GetUpdateMetrics() map[string]interface{} {
+	s.cacheMu.RLock()
+	cacheSize := len(s.chunkCache)
+	s.cacheMu.RUnlock()
+
+	return map[string]interface{}{
+		"cache_size": cacheSize,
+		"timestamp":  time.Now(),
+		"chunk_size": s.chunkSize,
+	}
+}
+
+// =============================================================================
+// ORGANIZATION SERVICE
+// =============================================================================
 
 type OrganizationService struct {
 	store  DataStore
@@ -1246,7 +1491,9 @@ func (s *OrganizationService) UpdateOrganization(ctx context.Context, org *Organ
 	return s.store.UpdateOrganization(ctx, org)
 }
 
-// --- Authentication Service Implementation ---
+// =============================================================================
+// AUTHENTICATION SERVICE
+// =============================================================================
 
 type AuthenticationService struct {
 	store  DataStore

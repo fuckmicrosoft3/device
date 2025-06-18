@@ -42,6 +42,8 @@ func runMigrations() error {
 		&core.Telemetry{},
 		&core.FirmwareRelease{},
 		&core.UpdateSession{},
+		&core.UpdateBatch{},
+		&core.UpdateBatchDevice{},
 		&core.AccessToken{},
 	}
 

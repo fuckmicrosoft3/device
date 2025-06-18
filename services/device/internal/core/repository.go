@@ -47,6 +47,22 @@ type DataStore interface {
 	UpdateUpdateSession(ctx context.Context, session *UpdateSession) error
 	GetActiveDeviceUpdate(ctx context.Context, deviceID uint) (*UpdateSession, error)
 
+	// Batch device operations
+	CreateDeviceBatch(ctx context.Context, devices []*Device) ([]error, error)
+	ListDevices(ctx context.Context, limit, offset int) ([]*Device, error)
+
+	// Batch update operations
+	CreateUpdateBatch(ctx context.Context, batch *UpdateBatch) error
+	GetUpdateBatch(ctx context.Context, id uint) (*UpdateBatch, error)
+	ListUpdateBatches(ctx context.Context) ([]*UpdateBatch, error)
+	UpdateUpdateBatch(ctx context.Context, batch *UpdateBatch) error
+
+	// Batch update device operations
+	CreateUpdateBatchDevice(ctx context.Context, batchDevice *UpdateBatchDevice) error
+	CreateUpdateBatchDevices(ctx context.Context, batchDevices []*UpdateBatchDevice) error
+	GetUpdateBatchDevices(ctx context.Context, batchID uint) ([]*UpdateBatchDevice, error)
+	UpdateUpdateBatchDevice(ctx context.Context, batchDevice *UpdateBatchDevice) error
+
 	// Access token operations
 	CreateAccessToken(ctx context.Context, token *AccessToken) error
 	GetAccessToken(ctx context.Context, token string) (*AccessToken, error)
@@ -98,6 +114,31 @@ func (s *dataStore) UpdateDeviceHeartbeat(ctx context.Context, deviceID uint) er
 	now := time.Now()
 	return s.db.WithContext(ctx).Model(&Device{}).Where("id = ?", deviceID).
 		Update("last_heartbeat", now).Error
+}
+
+func (s *dataStore) CreateDeviceBatch(ctx context.Context, devices []*Device) ([]error, error) {
+	var errors []error
+	for _, device := range devices {
+		if err := s.db.WithContext(ctx).Create(device).Error; err != nil {
+			errors = append(errors, err)
+		} else {
+			errors = append(errors, nil)
+		}
+	}
+	return errors, nil
+}
+
+func (s *dataStore) ListDevices(ctx context.Context, limit, offset int) ([]*Device, error) {
+	var devices []*Device
+	query := s.db.WithContext(ctx).Preload("Organization")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	err := query.Find(&devices).Error
+	return devices, err
 }
 
 func (s *dataStore) ListDevicesByOrganization(ctx context.Context, orgID uint) ([]*Device, error) {
@@ -264,4 +305,57 @@ func (s *dataStore) UpdateTokenLastAccess(ctx context.Context, token string) err
 
 func (s *dataStore) DeleteAccessToken(ctx context.Context, token string) error {
 	return s.db.WithContext(ctx).Where("token = ?", token).Delete(&AccessToken{}).Error
+}
+
+// --- Batch Update Operations ---
+
+func (s *dataStore) CreateUpdateBatch(ctx context.Context, batch *UpdateBatch) error {
+	return s.db.WithContext(ctx).Create(batch).Error
+}
+
+func (s *dataStore) GetUpdateBatch(ctx context.Context, id uint) (*UpdateBatch, error) {
+	var batch UpdateBatch
+	err := s.db.WithContext(ctx).
+		Preload("Firmware").
+		Preload("Devices").
+		Preload("Devices.Device").
+		Preload("Devices.UpdateSession").
+		First(&batch, id).Error
+	return &batch, err
+}
+
+func (s *dataStore) ListUpdateBatches(ctx context.Context) ([]*UpdateBatch, error) {
+	var batches []*UpdateBatch
+	err := s.db.WithContext(ctx).
+		Preload("Firmware").
+		Find(&batches).Error
+	return batches, err
+}
+
+func (s *dataStore) UpdateUpdateBatch(ctx context.Context, batch *UpdateBatch) error {
+	return s.db.WithContext(ctx).Save(batch).Error
+}
+
+// --- Batch Update Device Operations ---
+
+func (s *dataStore) CreateUpdateBatchDevice(ctx context.Context, batchDevice *UpdateBatchDevice) error {
+	return s.db.WithContext(ctx).Create(batchDevice).Error
+}
+
+func (s *dataStore) CreateUpdateBatchDevices(ctx context.Context, batchDevices []*UpdateBatchDevice) error {
+	return s.db.WithContext(ctx).Create(&batchDevices).Error
+}
+
+func (s *dataStore) GetUpdateBatchDevices(ctx context.Context, batchID uint) ([]*UpdateBatchDevice, error) {
+	var batchDevices []*UpdateBatchDevice
+	err := s.db.WithContext(ctx).
+		Preload("Device").
+		Preload("UpdateSession").
+		Where("update_batch_id = ?", batchID).
+		Find(&batchDevices).Error
+	return batchDevices, err
+}
+
+func (s *dataStore) UpdateUpdateBatchDevice(ctx context.Context, batchDevice *UpdateBatchDevice) error {
+	return s.db.WithContext(ctx).Save(batchDevice).Error
 }

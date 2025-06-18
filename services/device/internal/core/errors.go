@@ -23,9 +23,10 @@ var (
 	ErrFirmwareNotActive = errors.New("firmware release not active")
 
 	// Update errors.
-	ErrUpdateInProgress = errors.New("update already in progress")
-	ErrChecksumMismatch = errors.New("checksum verification failed")
-	ErrVersionDowngrade = errors.New("version downgrade not allowed")
+	ErrUpdateInProgress      = errors.New("update already in progress")
+	ErrUpdateSessionNotFound = errors.New("update session not found")
+	ErrChecksumMismatch      = errors.New("checksum verification failed")
+	ErrVersionDowngrade      = errors.New("version downgrade not allowed")
 )
 
 // BusinessError represents a business logic error with a code.

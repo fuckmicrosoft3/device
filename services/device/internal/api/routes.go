@@ -35,6 +35,8 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 		// OTA update endpoints for devices
 		deviceAPI.GET("/updates/check", handlers.CheckForUpdates)
 		deviceAPI.GET("/updates/:session/download", handlers.DownloadFirmwareChunk)
+		deviceAPI.POST("/updates/:session/ack", handlers.AcknowledgeUpdate)
+		deviceAPI.POST("/updates/:session/flashed", handlers.CompleteFlash)
 		deviceAPI.POST("/updates/:session/complete", handlers.CompleteUpdate)
 	}
 
@@ -53,6 +55,7 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 
 			// Write-scoped device endpoints
 			devices.POST("", RequireScope(authService, "devices:write"), handlers.RegisterDevice)
+			devices.POST("/batch", RequireScope(authService, "devices:write"), handlers.RegisterDeviceBatch)
 			devices.PATCH("/:id/status", RequireScope(authService, "devices:write"), handlers.UpdateDeviceStatus)
 			// [NEW] Admin endpoint to manually trigger an update check for a device
 			devices.POST("/:id/update", RequireScope(authService, "devices:write"), handlers.InitiateUpdate)
@@ -99,6 +102,15 @@ func SetupRoutes(router *gin.Engine, handlers *APIHandlers, services *core.Servi
 		{
 			// [NEW] Get details of a specific update session
 			updates.GET("/sessions/:sessionID", handlers.GetUpdateSession)
+
+			// --- Batch Update Management ---
+			batches := updates.Group("/batches")
+			batches.Use(RequireScope(authService, "updates:write"))
+			{
+				batches.POST("", handlers.CreateUpdateBatch)
+				batches.GET("", handlers.ListUpdateBatches)
+				batches.GET("/:id", handlers.GetUpdateBatch)
+			}
 		}
 
 		// --- Administrative Endpoints ---

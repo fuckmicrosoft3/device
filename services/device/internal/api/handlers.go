@@ -538,7 +538,7 @@ func (h *APIHandlers) CreateAccessToken(c *gin.Context) {
 	var req struct {
 		Description string   `binding:"required" json:"description"`
 		Scopes      []string `binding:"required" json:"scopes"`
-		ExpiresIn   string   `json:"expires_at"` 
+		ExpiresIn   string   `json:"expires_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format", "details": err.Error()})
@@ -578,18 +578,166 @@ func (h *APIHandlers) ListAccessTokens(c *gin.Context) {
 
 // RevokeAccessToken deletes an access token.
 func (h *APIHandlers) RevokeAccessToken(c *gin.Context) {
-
-  tokenString := c.Param("id")
+	tokenString := c.Param("id")
 	if tokenString == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "token must be provided in the URL path"})
 		return
 	}
 
-	err := h.authentication.RevokeToken(c.Request.Context(), tokenString)
-	if err != nil {
+	if err := h.authentication.RevokeToken(c.Request.Context(), tokenString); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke token"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "access token revoked"})
+	c.JSON(http.StatusOK, gin.H{"message": "token revoked successfully"})
+}
+
+// --- Batch Device Registration ---
+
+// RegisterDeviceBatch handles batch device registration requests.
+func (h *APIHandlers) RegisterDeviceBatch(c *gin.Context) {
+	var requests []core.BatchRegistrationRequest
+	if err := c.ShouldBindJSON(&requests); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format", "details": err.Error()})
+		return
+	}
+
+	if len(requests) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no devices provided for registration"})
+		return
+	}
+
+	if len(requests) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "maximum 100 devices allowed per batch"})
+		return
+	}
+
+	response, err := h.deviceManagement.RegisterDeviceBatch(c.Request.Context(), requests)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "batch registration failed", "details": err.Error()})
+		return
+	}
+
+	// Return 207 Multi-Status if there were partial failures
+	if len(response.Failed) > 0 && len(response.Successful) > 0 {
+		c.JSON(http.StatusMultiStatus, response)
+		return
+	}
+
+	// Return 400 if all failed
+	if len(response.Successful) == 0 {
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	// Return 201 if all succeeded
+	c.JSON(http.StatusCreated, response)
+}
+
+// --- Enhanced OTA Handlers ---
+
+// AcknowledgeUpdate handles device acknowledgment of update initiation.
+func (h *APIHandlers) AcknowledgeUpdate(c *gin.Context) {
+	sessionID := c.Param("session")
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session ID is required"})
+		return
+	}
+
+	if err := h.updateManagement.AcknowledgeUpdate(c.Request.Context(), sessionID); err != nil {
+		if businessErr, ok := err.(core.BusinessError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Message, "code": businessErr.Code})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to acknowledge update"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "update acknowledged"})
+}
+
+// CompleteFlash handles device notification of firmware flash completion.
+func (h *APIHandlers) CompleteFlash(c *gin.Context) {
+	sessionID := c.Param("session")
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session ID is required"})
+		return
+	}
+
+	if err := h.updateManagement.CompleteFlash(c.Request.Context(), sessionID); err != nil {
+		if businessErr, ok := err.(core.BusinessError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Message, "code": businessErr.Code})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to complete flash"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "firmware flash completed"})
+}
+
+// --- Batch Update Management Handlers ---
+
+// CreateUpdateBatch creates a new batch update job.
+func (h *APIHandlers) CreateUpdateBatch(c *gin.Context) {
+	var req core.CreateUpdateBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format", "details": err.Error()})
+		return
+	}
+
+	if len(req.DeviceIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no devices specified for batch update"})
+		return
+	}
+
+	if len(req.DeviceIDs) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "maximum 500 devices allowed per batch"})
+		return
+	}
+
+	batch, err := h.updateManagement.CreateUpdateBatch(c.Request.Context(), req)
+	if err != nil {
+		if businessErr, ok := err.(core.BusinessError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": businessErr.Message, "code": businessErr.Code})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create update batch", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, batch)
+}
+
+// ListUpdateBatches returns all update batches.
+func (h *APIHandlers) ListUpdateBatches(c *gin.Context) {
+	batches, err := h.updateManagement.ListUpdateBatches(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list update batches"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"batches": batches})
+}
+
+// GetUpdateBatch returns details of a specific update batch.
+func (h *APIHandlers) GetUpdateBatch(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid batch ID"})
+		return
+	}
+
+	batch, err := h.updateManagement.GetUpdateBatch(c.Request.Context(), uint(id))
+	if err != nil {
+		if businessErr, ok := err.(core.BusinessError); ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": businessErr.Message, "code": businessErr.Code})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get update batch"})
+		return
+	}
+
+	c.JSON(http.StatusOK, batch)
 }

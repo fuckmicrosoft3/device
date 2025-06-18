@@ -102,13 +102,41 @@ type AccessToken struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// UpdateBatch represents a batch OTA update job targeting multiple devices.
+type UpdateBatch struct {
+	ID         uint                `gorm:"primaryKey"               json:"id"`
+	Name       string              `gorm:"not null"                 json:"name"`
+	FirmwareID uint                `gorm:"index;not null"           json:"firmware_id"`
+	Status     string              `gorm:"index;not null"           json:"status"`
+	CreatedAt  time.Time           `json:"created_at"`
+	UpdatedAt  time.Time           `json:"updated_at"`
+	Firmware   FirmwareRelease     `gorm:"foreignKey:FirmwareID"`
+	Devices    []UpdateBatchDevice `gorm:"foreignKey:UpdateBatchID"`
+}
+
+// UpdateBatchDevice represents the status of an update for a specific device within a batch.
+type UpdateBatchDevice struct {
+	ID              uint           `gorm:"primaryKey"                                      json:"id"`
+	UpdateBatchID   uint           `gorm:"index;not null"                                  json:"update_batch_id"`
+	DeviceID        uint           `gorm:"index;not null"                                  json:"device_id"`
+	Status          string         `gorm:"index;not null"                                  json:"status"`
+	UpdateSessionID *string        `gorm:"index"                                           json:"update_session_id"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	UpdateBatch     UpdateBatch    `gorm:"foreignKey:UpdateBatchID"`
+	Device          Device         `gorm:"foreignKey:DeviceID"`
+	UpdateSession   *UpdateSession `gorm:"foreignKey:UpdateSessionID;references:SessionID"`
+}
+
 // TableName overrides for GORM.
-func (Device) TableName() string          { return "devices" }
-func (Telemetry) TableName() string       { return "telemetry" }
-func (Organization) TableName() string    { return "organizations" }
-func (FirmwareRelease) TableName() string { return "firmware_releases" }
-func (UpdateSession) TableName() string   { return "update_sessions" }
-func (AccessToken) TableName() string     { return "access_tokens" }
+func (Device) TableName() string            { return "devices" }
+func (Telemetry) TableName() string         { return "telemetry" }
+func (Organization) TableName() string      { return "organizations" }
+func (FirmwareRelease) TableName() string   { return "firmware_releases" }
+func (UpdateSession) TableName() string     { return "update_sessions" }
+func (AccessToken) TableName() string       { return "access_tokens" }
+func (UpdateBatch) TableName() string       { return "update_batches" }
+func (UpdateBatchDevice) TableName() string { return "update_batch_devices" }
 
 // Constants for business processes.
 const (
@@ -124,15 +152,29 @@ const (
 	ReleaseStatusDeprecated = "deprecated"
 
 	// Update statuses.
-	UpdateStatusInitiated   = "initiated"
-	UpdateStatusDownloading = "downloading"
-	UpdateStatusCompleted   = "completed"
-	UpdateStatusFailed      = "failed"
-	UpdateStatusCancelled   = "cancelled"
+	UpdateStatusInitiated    = "initiated"
+	UpdateStatusAcknowledged = "acknowledged"
+	UpdateStatusDownloading  = "downloading"
+	UpdateStatusFlashed      = "flashed"
+	UpdateStatusCompleted    = "completed"
+	UpdateStatusFailed       = "failed"
+	UpdateStatusCancelled    = "cancelled"
 
 	// Environments.
 	EnvironmentStaging    = "staging"
 	EnvironmentProduction = "production"
+
+	// Batch update statuses.
+	BatchStatusPending    = "pending"
+	BatchStatusInProgress = "in_progress"
+	BatchStatusCompleted  = "completed"
+	BatchStatusFailed     = "failed"
+
+	// Batch device statuses.
+	BatchDeviceStatusPending   = "pending"
+	BatchDeviceStatusInitiated = "initiated"
+	BatchDeviceStatusSucceeded = "succeeded"
+	BatchDeviceStatusFailed    = "failed"
 
 	// Common telemetry types (from "ev" field).
 	TelemetryTypeCheck         = "check"
