@@ -4,16 +4,19 @@ import (
 	"context"
 	"os"
 	"os/signal"
-	"example.com/backstage/services/sales/config"
-	"example.com/backstage/services/sales/internal/api"
-	"example.com/backstage/services/sales/internal/cache"
-	"example.com/backstage/services/sales/internal/metrics"
-	"example.com/backstage/services/sales/internal/models"
-	// "example.com/backstage/services/sales/internal/repositories"
-	"example.com/backstage/services/sales/internal/search"
-	"example.com/backstage/services/sales/internal/services"
-	"example.com/backstage/services/sales/internal/tracing"
+
+	"go.novek.io/sales/config"
+	"go.novek.io/sales/internal/api"
+	"go.novek.io/sales/internal/cache"
+	"go.novek.io/sales/internal/metrics"
+	"go.novek.io/sales/internal/models"
+
+	// "go.novek.io/sales/internal/repositories"
 	"syscall"
+
+	"go.novek.io/sales/internal/search"
+	"go.novek.io/sales/internal/services"
+	"go.novek.io/sales/internal/tracing"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -47,7 +50,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	}
 
 	// Set up signal handling for graceful shutdown
-	ctx, stop := signal.NotifyContext(context.Background(), 
+	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -93,7 +96,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 
 	// Wait for termination signal
 	<-ctx.Done()
-	
+
 	// Shutdown the server
 	if err := server.Shutdown(context.Background()); err != nil {
 		log.Error().Err(err).Msg("Server shutdown error")

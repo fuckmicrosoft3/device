@@ -6,20 +6,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.novek.io/sales/internal/models"
 	"gorm.io/gorm"
-	"example.com/backstage/services/sales/internal/models"
 )
 
 // DeviceRepository provides access to device data
 type DeviceRepository struct {
-	db        *gorm.DB // Write database
+	db         *gorm.DB // Write database
 	readOnlyDB *gorm.DB // Read-only database
 }
 
 // NewDeviceRepository creates a new device repository
 func NewDeviceRepository(db *gorm.DB, readOnlyDB *gorm.DB) *DeviceRepository {
 	return &DeviceRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -37,14 +37,14 @@ func (r *DeviceRepository) GetByMCU(ctx context.Context, mcu string) (*models.De
 
 // DeviceMachineRevisionRepository provides access to device-machine revisions
 type DeviceMachineRevisionRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewDeviceMachineRevisionRepository creates a new repository
 func NewDeviceMachineRevisionRepository(db *gorm.DB, readOnlyDB *gorm.DB) *DeviceMachineRevisionRepository {
 	return &DeviceMachineRevisionRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -65,14 +65,14 @@ func (r *DeviceMachineRevisionRepository) GetActiveAtTime(ctx context.Context, d
 
 // MachineRevisionRepository provides access to machine revisions
 type MachineRevisionRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewMachineRevisionRepository creates a new repository
 func NewMachineRevisionRepository(db *gorm.DB, readOnlyDB *gorm.DB) *MachineRevisionRepository {
 	return &MachineRevisionRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -93,14 +93,14 @@ func (r *MachineRevisionRepository) GetActiveAtTime(ctx context.Context, deviceM
 
 // MachineRepository provides access to machine data
 type MachineRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewMachineRepository creates a new repository
 func NewMachineRepository(db *gorm.DB, readOnlyDB *gorm.DB) *MachineRepository {
 	return &MachineRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -129,14 +129,14 @@ func (r *MachineRepository) GetAddress(ctx context.Context, machineID uuid.UUID)
 
 // TenantRepository provides access to tenant data
 type TenantRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewTenantRepository creates a new repository
 func NewTenantRepository(db *gorm.DB, readOnlyDB *gorm.DB) *TenantRepository {
 	return &TenantRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -154,14 +154,14 @@ func (r *TenantRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.T
 
 // DispenseSessionRepository provides access to dispense session data
 type DispenseSessionRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewDispenseSessionRepository creates a new repository
 func NewDispenseSessionRepository(db *gorm.DB, readOnlyDB *gorm.DB) *DispenseSessionRepository {
 	return &DispenseSessionRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -204,28 +204,28 @@ func (r *DispenseSessionRepository) MarkAsProcessed(ctx context.Context, id uuid
 		Model(&models.DispenseSession{}).
 		Where("id = ?", id).
 		Update("is_processed", true)
-	
+
 	if result.Error != nil {
 		return errors.Wrap(result.Error, "failed to mark dispense session as processed")
 	}
-	
+
 	if result.RowsAffected == 0 {
 		return errors.New("no dispense session updated")
 	}
-	
+
 	return nil
 }
 
 // SaleRepository provides access to sale data
 type SaleRepository struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	readOnlyDB *gorm.DB
 }
 
 // NewSaleRepository creates a new repository
 func NewSaleRepository(db *gorm.DB, readOnlyDB *gorm.DB) *SaleRepository {
 	return &SaleRepository{
-		db:        db,
+		db:         db,
 		readOnlyDB: readOnlyDB,
 	}
 }
@@ -238,9 +238,9 @@ func (r *SaleRepository) Create(ctx context.Context, sale *models.Sale) error {
 
 // SaleDetails contains all contextual information for a sale
 type SaleDetails struct {
-	Machine        *models.Machine
+	Machine         *models.Machine
 	MachineRevision *models.MachineRevision
-	Tenant         *models.Tenant
+	Tenant          *models.Tenant
 }
 
 // RetrieveSaleDetails gets all details needed for a sale
@@ -285,8 +285,8 @@ func (r *SaleRepository) RetrieveSaleDetails(
 	}
 
 	return &SaleDetails{
-		Machine:        machine,
+		Machine:         machine,
 		MachineRevision: machineRevision,
-		Tenant:         tenant,
+		Tenant:          tenant,
 	}, nil
 }

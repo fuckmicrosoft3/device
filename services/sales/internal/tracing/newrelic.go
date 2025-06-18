@@ -1,7 +1,7 @@
 package tracing
 
 import (
-	"example.com/backstage/services/sales/config"
+	"go.novek.io/sales/config"
 
 	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/pkg/errors"
@@ -107,7 +107,7 @@ func (t *NewRelicTracer) Close() {
 	if !t.enabled || t.app == nil {
 		return
 	}
-	
+
 	// New Relic's application has no explicit Close method
 	// This is just a placeholder for future maintenance
 	log.Info().Msg("New Relic tracer shutdown")

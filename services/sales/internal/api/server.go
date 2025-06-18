@@ -3,11 +3,12 @@ package api
 import (
 	"context"
 	"net/http"
-	"example.com/backstage/services/sales/config"
-	"example.com/backstage/services/sales/internal/api/handlers"
-	"example.com/backstage/services/sales/internal/services"
-	"example.com/backstage/services/sales/internal/tracing"
-	"example.com/backstage/services/sales/internal/metrics"
+
+	"go.novek.io/sales/config"
+	"go.novek.io/sales/internal/api/handlers"
+	"go.novek.io/sales/internal/metrics"
+	"go.novek.io/sales/internal/services"
+	"go.novek.io/sales/internal/tracing"
 
 	"time"
 

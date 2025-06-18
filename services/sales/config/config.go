@@ -10,14 +10,14 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Environment    string `mapstructure:"environment"`
-	ServerAddress  string `mapstructure:"server.address"`
+	Environment    string        `mapstructure:"environment"`
+	ServerAddress  string        `mapstructure:"server.address"`
 	ServerTimeout  time.Duration `mapstructure:"server.timeout"`
-	CorsEnabled    bool   `mapstructure:"server.cors_enabled"`
-	CorsOrigins    []string `mapstructure:"server.cors_origins"`
-	MetricsEnabled bool   `mapstructure:"metrics_enabled"`
-	LogLevel       string `mapstructure:"logging.level"`
-	LogFormat      string `mapstructure:"logging.format"`
+	CorsEnabled    bool          `mapstructure:"server.cors_enabled"`
+	CorsOrigins    []string      `mapstructure:"server.cors_origins"`
+	MetricsEnabled bool          `mapstructure:"metrics_enabled"`
+	LogLevel       string        `mapstructure:"logging.level"`
+	LogFormat      string        `mapstructure:"logging.format"`
 	DB             DatabaseConfig
 	Redis          RedisConfig
 	Azure          AzureConfig
@@ -61,17 +61,17 @@ type ElasticConfig struct {
 
 // TracingConfig holds tracing configuration
 type TracingConfig struct {
-	LicenseKey       string `mapstructure:"tracing.license_key"`
-	AppName          string `mapstructure:"tracing.app_name"`
-	LogLevel         string `mapstructure:"tracing.log_level"`
-	LogEnabled       bool   `mapstructure:"tracing.log_enabled"`
-	DistribTracing   bool   `mapstructure:"tracing.distributed_tracing_enabled"`
+	LicenseKey     string `mapstructure:"tracing.license_key"`
+	AppName        string `mapstructure:"tracing.app_name"`
+	LogLevel       string `mapstructure:"tracing.log_level"`
+	LogEnabled     bool   `mapstructure:"tracing.log_enabled"`
+	DistribTracing bool   `mapstructure:"tracing.distributed_tracing_enabled"`
 }
 
 // LoadConfig reads configuration from file or environment variables
 func LoadConfig(path string) (Config, error) {
 	v := viper.New()
-	
+
 	// Set default values
 	setDefaults(v)
 
@@ -119,7 +119,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.cors_enabled", true)
 	v.SetDefault("server.cors_origins", []string{"*"})
 	v.SetDefault("metrics_enabled", true)
-	
+
 	// Database settings
 	v.SetDefault("database.dsn", "postgresql://postgres:postgres@localhost:5432/sales?sslmode=disable")
 	v.SetDefault("database.read_only_dsn", "postgresql://postgres:postgres@localhost:5432/sales_readonly?sslmode=disable")
@@ -127,28 +127,28 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_open_conns", 50)
 	v.SetDefault("database.max_idle_conns", 10)
 	v.SetDefault("database.conn_max_lifetime", "1h")
-	
+
 	// Redis settings
 	v.SetDefault("redis.host", "localhost")
 	v.SetDefault("redis.port", 6379)
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
 	v.SetDefault("redis.enabled", true)
-	
+
 	// Azure settings
 	v.SetDefault("azure.queue_name", "sales-events")
-	
+
 	// Elasticsearch settings
 	v.SetDefault("elastic.url", "http://localhost:9200")
 	v.SetDefault("elastic.prefix", "sales")
 	v.SetDefault("elastic.index", "sales")
-	
+
 	// Tracing settings
 	v.SetDefault("tracing.app_name", "Sales Service")
 	v.SetDefault("tracing.log_level", "info")
 	v.SetDefault("tracing.log_enabled", true)
 	v.SetDefault("tracing.distributed_tracing_enabled", true)
-	
+
 	// Logging settings
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")

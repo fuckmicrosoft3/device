@@ -3,8 +3,9 @@ package handlers
 import (
 	"net/http"
 	"runtime"
-	"example.com/backstage/services/sales/internal/metrics"
-	"example.com/backstage/services/sales/internal/tracing"
+
+	"go.novek.io/sales/internal/metrics"
+	"go.novek.io/sales/internal/tracing"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,7 +38,7 @@ func (h *MetricsHandler) HandleGetMetrics(c *gin.Context) {
 // HandleGetHealthCheck returns a simplified health status
 func (h *MetricsHandler) HandleGetHealthCheck(c *gin.Context) {
 	healthChecks := h.metrics.GetHealthChecks()
-	
+
 	// Calculate overall health
 	healthy := true
 	for _, status := range healthChecks {
@@ -46,12 +47,12 @@ func (h *MetricsHandler) HandleGetHealthCheck(c *gin.Context) {
 			break
 		}
 	}
-	
+
 	status := http.StatusOK
 	if !healthy {
 		status = http.StatusServiceUnavailable
 	}
-	
+
 	c.JSON(status, gin.H{
 		"status":  healthy,
 		"details": healthChecks,

@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"net/http"
-	"example.com/backstage/services/sales/internal/models"
-	"example.com/backstage/services/sales/internal/services"
-	"example.com/backstage/services/sales/internal/tracing"
 	"time"
+
+	"go.novek.io/sales/internal/models"
+	"go.novek.io/sales/internal/services"
+	"go.novek.io/sales/internal/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -118,7 +119,7 @@ func (h *SalesHandler) HandleIncomingSalePayload(c *gin.Context) {
 		timestamp = time.Now().Format(time.RFC3339)
 	}
 
-	// Check if the session was marked as processed 
+	// Check if the session was marked as processed
 	// If so, we can indicate that the sale was created as well
 	message := "Sale payload received"
 	if dispenseSession.IsProcessed {

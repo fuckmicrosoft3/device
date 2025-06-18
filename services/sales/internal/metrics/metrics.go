@@ -9,22 +9,21 @@ import (
 // MetricType defines types of metrics we track
 type MetricType string
 
-
 // Different metric types
 const (
-	TypeCounter     MetricType = "counter"     // Always increasing count
-	TypeGauge       MetricType = "gauge"       // Point-in-time value
-	TypeTimer       MetricType = "timer"       // Duration measurement
-	TypeErrorRate   MetricType = "error_rate"  // Error percentage
-	TypeHealthCheck MetricType = "health"      // Health status (0/1)
+	TypeCounter     MetricType = "counter"    // Always increasing count
+	TypeGauge       MetricType = "gauge"      // Point-in-time value
+	TypeTimer       MetricType = "timer"      // Duration measurement
+	TypeErrorRate   MetricType = "error_rate" // Error percentage
+	TypeHealthCheck MetricType = "health"     // Health status (0/1)
 )
 
 // MetricValue represents a metric value with metadata
 type MetricValue struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Type        MetricType `json:"type"`
-	Value       int64      `json:"value"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Type        MetricType        `json:"type"`
+	Value       int64             `json:"value"`
 	Tags        map[string]string `json:"tags,omitempty"`
 }
 
@@ -39,42 +38,42 @@ type TimerMetric struct {
 
 // ErrorRateMetric captures error rates
 type ErrorRateMetric struct {
-	Total      int64   `json:"total"`
-	Errors     int64   `json:"errors"`
-	ErrorRate  float64 `json:"error_rate"`
+	Total     int64   `json:"total"`
+	Errors    int64   `json:"errors"`
+	ErrorRate float64 `json:"error_rate"`
 }
 
 // Metrics is the main metrics collector
 type Metrics struct {
-	mu            sync.RWMutex
-	counters      map[string]*int64
-	gauges        map[string]*int64
-	timers        map[string]*struct {
+	mu       sync.RWMutex
+	counters map[string]*int64
+	gauges   map[string]*int64
+	timers   map[string]*struct {
 		count       int64
 		totalTimeMs int64
 		minTimeMs   int64
 		maxTimeMs   int64
 	}
-	errorRates    map[string]*struct {
+	errorRates map[string]*struct {
 		total  int64
 		errors int64
 	}
-	healthChecks  map[string]*int64
-	startTime     time.Time
+	healthChecks map[string]*int64
+	startTime    time.Time
 }
 
 // NewMetrics creates a new metrics collector
 func NewMetrics() *Metrics {
 	return &Metrics{
-		counters:     make(map[string]*int64),
-		gauges:       make(map[string]*int64),
-		timers:       make(map[string]*struct {
+		counters: make(map[string]*int64),
+		gauges:   make(map[string]*int64),
+		timers: make(map[string]*struct {
 			count       int64
 			totalTimeMs int64
 			minTimeMs   int64
 			maxTimeMs   int64
 		}),
-		errorRates:   make(map[string]*struct {
+		errorRates: make(map[string]*struct {
 			total  int64
 			errors int64
 		}),
@@ -238,47 +237,47 @@ func (m *Metrics) SetHealth(component string, isHealthy bool) {
 // GetCounters returns all counters
 func (m *Metrics) GetCounters() map[string]int64 {
 	counters := make(map[string]int64)
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for name, counter := range m.counters {
 		counters[name] = atomic.LoadInt64(counter)
 	}
-	
+
 	return counters
 }
 
 // GetGauges returns all gauges
 func (m *Metrics) GetGauges() map[string]int64 {
 	gauges := make(map[string]int64)
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for name, gauge := range m.gauges {
 		gauges[name] = atomic.LoadInt64(gauge)
 	}
-	
+
 	return gauges
 }
 
 // GetTimers returns all timers
 func (m *Metrics) GetTimers() map[string]TimerMetric {
 	timers := make(map[string]TimerMetric)
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for name, timer := range m.timers {
 		count := atomic.LoadInt64(&timer.count)
 		totalTime := atomic.LoadInt64(&timer.totalTimeMs)
-		
+
 		var average float64
 		if count > 0 {
 			average = float64(totalTime) / float64(count)
 		}
-		
+
 		timers[name] = TimerMetric{
 			Count:         count,
 			TotalTimeMs:   totalTime,
@@ -287,47 +286,47 @@ func (m *Metrics) GetTimers() map[string]TimerMetric {
 			MaxTimeMs:     atomic.LoadInt64(&timer.maxTimeMs),
 		}
 	}
-	
+
 	return timers
 }
 
 // GetErrorRates returns all error rates
 func (m *Metrics) GetErrorRates() map[string]ErrorRateMetric {
 	errorRates := make(map[string]ErrorRateMetric)
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for name, er := range m.errorRates {
 		total := atomic.LoadInt64(&er.total)
 		errors := atomic.LoadInt64(&er.errors)
-		
+
 		var rate float64
 		if total > 0 {
 			rate = float64(errors) / float64(total) * 100.0
 		}
-		
+
 		errorRates[name] = ErrorRateMetric{
 			Total:     total,
 			Errors:    errors,
 			ErrorRate: rate,
 		}
 	}
-	
+
 	return errorRates
 }
 
 // GetHealthChecks returns all health checks
 func (m *Metrics) GetHealthChecks() map[string]bool {
 	checks := make(map[string]bool)
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	for name, health := range m.healthChecks {
 		checks[name] = atomic.LoadInt64(health) > 0
 	}
-	
+
 	return checks
 }
 

@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"example.com/backstage/services/sales/config"
-	"example.com/backstage/services/sales/internal/models"
-	"example.com/backstage/services/sales/internal/tracing"
 	"time"
+
+	"go.novek.io/sales/config"
+	"go.novek.io/sales/internal/models"
+	"go.novek.io/sales/internal/tracing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/google/uuid"
@@ -97,13 +98,13 @@ func (a *AzureServiceBus) ProcessMessages(ctx context.Context, processor Message
 			for _, message := range messages {
 				// Start a transaction for this message
 				txn := a.tracer.StartTransaction(fmt.Sprintf("process-message-%s", message.MessageID))
-				
+
 				// Process the message
 				err := processor(ctx, message, txn)
 				if err != nil {
 					log.Error().Err(err).Str("messageID", message.MessageID).Msg("error processing message")
 					a.tracer.RecordError(txn, err)
-					
+
 					// Abandon the message so it can be retried
 					if abandonErr := receiver.AbandonMessage(context.Background(), message, nil); abandonErr != nil {
 						log.Error().Err(abandonErr).Str("messageID", message.MessageID).Msg("error abandoning message")
@@ -114,7 +115,7 @@ func (a *AzureServiceBus) ProcessMessages(ctx context.Context, processor Message
 						log.Error().Err(completeErr).Str("messageID", message.MessageID).Msg("error completing message")
 					}
 				}
-				
+
 				// End the transaction
 				a.tracer.EndTransaction(txn)
 			}

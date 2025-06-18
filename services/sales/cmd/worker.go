@@ -4,17 +4,20 @@ import (
 	"context"
 	"os"
 	"os/signal"
-	"example.com/backstage/services/sales/config"
-	"example.com/backstage/services/sales/internal/cache"
-	"example.com/backstage/services/sales/internal/messaging"
-	"example.com/backstage/services/sales/internal/metrics"
-	"example.com/backstage/services/sales/internal/models"
-	// "example.com/backstage/services/sales/internal/repositories"
-	"example.com/backstage/services/sales/internal/search"
-	"example.com/backstage/services/sales/internal/services"
-	"example.com/backstage/services/sales/internal/tracing"
+
+	"go.novek.io/sales/config"
+	"go.novek.io/sales/internal/cache"
+	"go.novek.io/sales/internal/messaging"
+	"go.novek.io/sales/internal/metrics"
+	"go.novek.io/sales/internal/models"
+
+	// "go.novek.io/sales/internal/repositories"
 	"syscall"
 	"time"
+
+	"go.novek.io/sales/internal/search"
+	"go.novek.io/sales/internal/services"
+	"go.novek.io/sales/internal/tracing"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/pkg/errors"
@@ -50,7 +53,7 @@ func runWorker(cmd *cobra.Command, args []string) error {
 	}
 
 	// Set up signal handling for graceful shutdown
-	ctx, stop := signal.NotifyContext(context.Background(), 
+	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -102,13 +105,13 @@ func runWorker(cmd *cobra.Command, args []string) error {
 	// Start the sales reconciliation cron job as a fallback mechanism
 	g.Go(func() error {
 		log.Info().Msg("Starting sales reconciliation cron job as fallback mechanism")
-		
+
 		// Create a scheduler
 		scheduler, err := gocron.NewScheduler()
 		if err != nil {
 			return err
 		}
-		
+
 		// Add the reconciliation job to run every 5 minutes
 		// This is less frequent since it's just a fallback mechanism now
 		_, err = scheduler.NewJob(
@@ -123,13 +126,13 @@ func runWorker(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Start the scheduler
 		scheduler.Start()
-		
+
 		// Wait for context cancellation
 		<-ctx.Done()
-		
+
 		// Shutdown the scheduler
 		return scheduler.Shutdown()
 	})

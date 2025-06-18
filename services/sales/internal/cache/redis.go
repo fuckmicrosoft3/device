@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"example.com/backstage/services/sales/config"
 	"time"
+
+	"go.novek.io/sales/config"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -111,6 +112,6 @@ func (c *RedisCache) Close() error {
 	if !c.enabled || c.client == nil {
 		return nil
 	}
-	
+
 	return c.client.Close()
 }
