@@ -1,4 +1,3 @@
-// services/device/internal/core/repository.go
 package core
 
 import (
@@ -8,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// DataStore defines the interface for data persistence operations
+// DataStore defines the interface for data persistence operations.
 type DataStore interface {
 	// Transaction support
 	WithTransaction(ctx context.Context, fn func(ctx context.Context, tx DataStore) error) error
@@ -55,17 +54,17 @@ type DataStore interface {
 	DeleteAccessToken(ctx context.Context, token string) error
 }
 
-// dataStore is the concrete implementation of DataStore
+// dataStore is the concrete implementation of DataStore.
 type dataStore struct {
 	db *gorm.DB
 }
 
-// NewDataStore creates a new data store instance
+// NewDataStore creates a new data store instance.
 func NewDataStore(db *gorm.DB) DataStore {
 	return &dataStore{db: db}
 }
 
-// WithTransaction executes a function within a database transaction
+// WithTransaction executes a function within a database transaction.
 func (s *dataStore) WithTransaction(ctx context.Context, fn func(ctx context.Context, tx DataStore) error) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		txStore := &dataStore{db: tx}

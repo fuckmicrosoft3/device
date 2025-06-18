@@ -1,4 +1,3 @@
-// services/device/internal/api/middleware.go
 package api
 
 import (
@@ -11,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// RequestLogger logs HTTP requests
+// RequestLogger logs HTTP requests.
 func RequestLogger(logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -42,7 +41,7 @@ func RequestLogger(logger *logrus.Logger) gin.HandlerFunc {
 	}
 }
 
-// TokenAuthentication validates access tokens
+// TokenAuthentication validates access tokens.
 func TokenAuthentication(authService *core.AuthenticationService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -71,7 +70,7 @@ func TokenAuthentication(authService *core.AuthenticationService) gin.HandlerFun
 	}
 }
 
-// RequireScope checks if token has required scope
+// RequireScope checks if token has required scope.
 func RequireScope(authService *core.AuthenticationService, scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenVal, exists := c.Get("access_token")
@@ -98,7 +97,7 @@ func RequireScope(authService *core.AuthenticationService, scope string) gin.Han
 	}
 }
 
-// DeviceAuthentication validates device identity
+// DeviceAuthentication validates device identity.
 func DeviceAuthentication(deviceService *core.DeviceManagementService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		deviceUID := c.Param("uid")
@@ -126,7 +125,7 @@ func DeviceAuthentication(deviceService *core.DeviceManagementService) gin.Handl
 	}
 }
 
-// ErrorHandler handles errors consistently
+// ErrorHandler handles errors consistently.
 func ErrorHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
@@ -151,7 +150,7 @@ func ErrorHandler() gin.HandlerFunc {
 	}
 }
 
-// CORS enables cross-origin requests
+// enable cross-origin requests.
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
@@ -174,10 +173,10 @@ func CORS() gin.HandlerFunc {
 	}
 }
 
-// RateLimiter implements rate limiting for API endpoints
+// RateLimiter implements rate limiting for API endpoints.
 func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 	// Simple in-memory rate limiter
-	// In production, use Redis-based rate limiting
+	// TODO: Use Redis-based rate limiting
 	clients := make(map[string]*rateLimitClient)
 
 	return func(c *gin.Context) {
@@ -222,7 +221,7 @@ type rateLimitClient struct {
 	requests  int
 }
 
-// Recovery handles panics and prevents server crashes
+// Recovery handles panics and prevents server crashes.
 func Recovery(logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {

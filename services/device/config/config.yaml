@@ -1,6 +1,7 @@
-# services/device/config/config.yaml
 # Default configuration for the device service.
 # These values can be overridden by environment variables (e.g., DEVICE_SERVER__PORT=9000).
+# 
+# 
 server:
   port: 8080
   read_timeout: 15s
@@ -23,15 +24,15 @@ redis:
   dial_timeout: 5s
 
 service_bus:
-  connection_string: "" # Not used directly anymore - see queue_routing
-  queue_name: ""        # Not used directly anymore - see queue_routing
+  connection_string: "" 
+  queue_name: ""        
   max_retries: 3
   retry_delay: 1s
 
-# MQTT configuration for telemetry ingestion
+# MQTT configuration 
 mqtt:
-  broker_url: "tcp://mqtt-broker:1883" # Use tls:// for secure connections
-  client_id: "device-service"
+  broker_url: "" 
+  client_id: ""
   username: ""
   password: ""
   qos: 1
@@ -39,7 +40,6 @@ mqtt:
   topics:
     - "devices/+/telemetry"      # Single device telemetry
     - "devices/+/telemetry/batch" # Batch telemetry
-    - "devices/+/status"          # Device status updates
   keep_alive: 30s
   connect_timeout: 10s
   max_reconnect_delay: 2m
@@ -48,7 +48,7 @@ firmware:
   storage_path: "/data/firmware"
   max_file_size: 10485760 # 10MB
   signing_enabled: false
-  private_key_path: "" # e.g., /keys/private.pem
+  private_key_path: "" 
 
 ota:
   chunk_size: 32768 # 32KB
@@ -57,12 +57,9 @@ ota:
   retry_attempts: 3
 
 storage:
-  wal_path: "/data/wal"
-  dead_letter_path: "/data/dead_letter"
-  backup_path: "/data/backup"
-  retention_days: 30
 
-# Queue routing configuration - maps organizations and telemetry types to Azure Service Bus queues
+
+# Queue routing configuration 
 queue_routing:
   organizations:
     # Staging environments
@@ -96,35 +93,4 @@ queue_routing:
         - queue_name: "novek-staging-dedicated-sales"
           telemetry_types: ["prec", "drop", "dispense"]
         - queue_name: "novek-staging-cs-messages-canisters-sessions"
-          telemetry_types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]
-
-    # Production environments
-    - organization_name: "Nestle Cloud"
-      environment: "production"
-      connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
-      queue_routes:
-        - queue_name: "nestle-production-erp-messages-devices"
-          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc"]
-        - queue_name: "nestle-production-erp-aux-messages-devices"
-          telemetry_types: ["audit_err", "audit_error", "echo", "error", "mem", "net", "time", "ue_sysinfo"]
-        - queue_name: "nestle-production-erp-messages-transactions"
-          telemetry_types: ["prec", "drop", "pay", "subscribe"]
-        - queue_name: "nestle-production-te-messages-transactions"
-          telemetry_types: ["drop", "prec", "refund", "subscribe"]
-
-    - organization_name: "novek.app"
-      environment: "production"
-      connection_string: "Endpoint=sb://production-nvk-uksouth-ingestor-svcb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=1nGsG+Znzo0ftyyP/KTVNsaU4Z2CYbRIlPTcy/z0uWs="
-      queue_routes:
-        - queue_name: "novek-production-erp-messages-devices"
-          telemetry_types: ["check", "location", "gps", "subscribe", "file-upload", "loc", "sensors"]
-        - queue_name: "novek-production-erp-aux-messages-devices"
-          telemetry_types: ["mem", "error", "calibrate", "net", "selection", "settings", "storage_stat", "time"]
-        - queue_name: "novek-production-erp-messages-transactions"
-          telemetry_types: ["prec", "drop", "pay", "subscribe", "refill", "auth-sys", "dispense"]
-        - queue_name: "novek-production-te-messages-transactions"
-          telemetry_types: ["drop", "prec", "refund", "subscribe"]
-        - queue_name: "novek-production-dedicated-sales"
-          telemetry_types: ["drop", "dispense", "prec"]
-        - queue_name: "novek-production-cs-messages-canisters-sessions"
           telemetry_types: ["check", "can_refill", "can_refiller_entry", "can_refiller_exit", "cleanin-op-start", "cl-op-status", "cleaning-complete"]

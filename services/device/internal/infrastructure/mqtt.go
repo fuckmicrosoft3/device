@@ -1,9 +1,9 @@
-// services/device/internal/infrastructure/mqtt.go
 package infrastructure
 
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -12,10 +12,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// MessageHandler processes MQTT messages
+// MessageHandler processes MQTT messages.
 type MessageHandler func(ctx context.Context, topic string, payload []byte) error
 
-// MQTTConfig holds MQTT connection settings
+// MQTTConfig holds MQTT connection settings.
 type MQTTConfig struct {
 	BrokerURL         string
 	ClientID          string
@@ -30,7 +30,7 @@ type MQTTConfig struct {
 	TLSConfig         *tls.Config
 }
 
-// MQTTSubscriber handles MQTT connections and message processing
+// MQTTSubscriber handles MQTT connections and message processing.
 type MQTTSubscriber struct {
 	config    MQTTConfig
 	client    mqtt.Client
@@ -42,10 +42,10 @@ type MQTTSubscriber struct {
 	wg        sync.WaitGroup
 }
 
-// NewMQTTSubscriber creates a new MQTT subscriber
+// NewMQTTSubscriber creates a new MQTT subscriber.
 func NewMQTTSubscriber(config MQTTConfig, logger *logrus.Logger) (*MQTTSubscriber, error) {
 	if config.BrokerURL == "" {
-		return nil, fmt.Errorf("MQTT broker URL is required")
+		return nil, errors.New("MQTT broker URL is required")
 	}
 
 	if config.ClientID == "" {
@@ -60,14 +60,14 @@ func NewMQTTSubscriber(config MQTTConfig, logger *logrus.Logger) (*MQTTSubscribe
 	}, nil
 }
 
-// RegisterHandler registers a handler for a specific message type
+// RegisterHandler registers a handler for a specific message type.
 func (s *MQTTSubscriber) RegisterHandler(messageType string, handler MessageHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.handlers[messageType] = handler
 }
 
-// Start connects to MQTT broker and subscribes to topics
+// Start connects to MQTT broker and subscribes to topics.
 func (s *MQTTSubscriber) Start() error {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(s.config.BrokerURL)
@@ -109,7 +109,7 @@ func (s *MQTTSubscriber) Start() error {
 	return nil
 }
 
-// Stop gracefully shuts down the MQTT subscriber
+// Stop gracefully shuts down the MQTT subscriber.
 func (s *MQTTSubscriber) Stop() {
 	s.logger.Info("Stopping MQTT subscriber...")
 
@@ -132,14 +132,14 @@ func (s *MQTTSubscriber) Stop() {
 	s.logger.Info("MQTT subscriber stopped")
 }
 
-// IsConnected returns the connection status
+// IsConnected returns the connection status.
 func (s *MQTTSubscriber) IsConnected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.connected
 }
 
-// onConnect handles successful connection
+// onConnect handles successful connection.
 func (s *MQTTSubscriber) onConnect(client mqtt.Client) {
 	s.mu.Lock()
 	s.connected = true
@@ -158,7 +158,7 @@ func (s *MQTTSubscriber) onConnect(client mqtt.Client) {
 	}
 }
 
-// onConnectionLost handles connection loss
+// onConnectionLost handles connection loss.
 func (s *MQTTSubscriber) onConnectionLost(client mqtt.Client, err error) {
 	s.mu.Lock()
 	s.connected = false
@@ -167,12 +167,12 @@ func (s *MQTTSubscriber) onConnectionLost(client mqtt.Client, err error) {
 	s.logger.WithError(err).Warn("Lost connection to MQTT broker")
 }
 
-// onReconnecting handles reconnection attempts
+// onReconnecting handles reconnection attempts.
 func (s *MQTTSubscriber) onReconnecting(client mqtt.Client, opts *mqtt.ClientOptions) {
 	s.logger.Info("Attempting to reconnect to MQTT broker...")
 }
 
-// messageHandler processes incoming MQTT messages
+// messageHandler processes incoming MQTT messages.
 func (s *MQTTSubscriber) messageHandler(client mqtt.Client, msg mqtt.Message) {
 	s.wg.Add(1)
 	go func() {
@@ -181,7 +181,7 @@ func (s *MQTTSubscriber) messageHandler(client mqtt.Client, msg mqtt.Message) {
 	}()
 }
 
-// processMessage handles individual message processing
+// processMessage handles individual message processing.
 func (s *MQTTSubscriber) processMessage(msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := msg.Payload()
@@ -223,36 +223,28 @@ func (s *MQTTSubscriber) processMessage(msg mqtt.Message) {
 	}
 }
 
-// getMessageType extracts message type from topic
+// getMessageType extracts message type from topic.
 func (s *MQTTSubscriber) getMessageType(topic string) string {
-	// Example topic structure: devices/{device_id}/telemetry
-	// This is a simplified example - adjust based on your topic structure
-	if contains(topic, "telemetry") {
-		return "telemetry"
-	}
-	if contains(topic, "status") {
-		return "status"
-	}
-	if contains(topic, "command") {
-		return "command"
-	}
-	return "unknown"
+	// TODO
+	//
+	return ""
 }
 
-// handleFailedMessage handles messages that failed processing
+// handleFailedMessage handles messages that failed processing.
 func (s *MQTTSubscriber) handleFailedMessage(topic string, payload []byte, err error) {
-	// Implement dead letter queue or retry mechanism
-	// For now, just log the failure
+	//
+	// TODO: Implement dead letter queue or retry mechanism
+
 	s.logger.WithError(err).WithFields(logrus.Fields{
 		"topic":        topic,
 		"payload_size": len(payload),
-	}).Error("Message processing failed - would go to dead letter queue")
+	}).Error("Message processing failed")
 }
 
-// PublishResponse publishes a response message
+// PublishResponse publishes a response message.
 func (s *MQTTSubscriber) PublishResponse(topic string, payload []byte, qos byte) error {
 	if !s.IsConnected() {
-		return fmt.Errorf("MQTT client not connected")
+		return errors.New("MQTT client not connected")
 	}
 
 	token := s.client.Publish(topic, qos, false, payload)
@@ -263,7 +255,7 @@ func (s *MQTTSubscriber) PublishResponse(topic string, payload []byte, qos byte)
 	return nil
 }
 
-// Helper function to check if string contains substring
+// Helper function to check if string contains substring.
 func contains(str, substr string) bool {
 	return len(str) >= len(substr) && str[len(str)-len(substr):] == substr
 }

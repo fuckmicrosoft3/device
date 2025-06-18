@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// WALEntry represents an entry in the write-ahead log
+// WALEntry represents an entry in the write-ahead log.
 type WALEntry struct {
 	ID        string      `json:"id"`
 	Timestamp time.Time   `json:"timestamp"`
@@ -21,7 +21,7 @@ type WALEntry struct {
 	Retries   int         `json:"retries"`
 }
 
-// WAL implements a write-ahead log for data persistence
+// WAL implements a write-ahead log for data persistence.
 type WAL struct {
 	path         string
 	file         *os.File
@@ -33,16 +33,16 @@ type WAL struct {
 	maxRetries   int
 }
 
-// NewWAL creates a new write-ahead log
+// NewWAL creates a new write-ahead log.
 func NewWAL(path string) (*WAL, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
 	}
 
 	// Open or create WAL file
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
 	}
@@ -66,7 +66,7 @@ func NewWAL(path string) (*WAL, error) {
 	return wal, nil
 }
 
-// Write adds an entry to the WAL
+// Write adds an entry to the WAL.
 func (w *WAL) Write(data interface{}) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -110,7 +110,7 @@ func (w *WAL) Write(data interface{}) error {
 	return nil
 }
 
-// ReadAll reads all entries from the WAL
+// ReadAll reads all entries from the WAL.
 func (w *WAL) ReadAll() ([]interface{}, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -147,14 +147,14 @@ func (w *WAL) ReadAll() ([]interface{}, error) {
 	return entries, nil
 }
 
-// Remove marks an entry as processed (logical deletion)
+// Remove marks an entry as processed (logical deletion).
 func (w *WAL) Remove(id string) error {
 	// In a production system, you might implement logical deletion
 	// For simplicity, we'll just log it
 	return nil
 }
 
-// Compact removes processed entries from the WAL
+// Compact removes processed entries from the WAL.
 func (w *WAL) Compact() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -216,7 +216,7 @@ func (w *WAL) Compact() error {
 	}
 
 	// Reopen file
-	w.file, err = os.OpenFile(w.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	w.file, err = os.OpenFile(w.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to reopen WAL file: %w", err)
 	}
@@ -227,7 +227,7 @@ func (w *WAL) Compact() error {
 	return nil
 }
 
-// rotate creates a new WAL file and archives the old one
+// rotate creates a new WAL file and archives the old one.
 func (w *WAL) rotate() error {
 	// Close current file
 	if err := w.file.Close(); err != nil {
@@ -241,7 +241,7 @@ func (w *WAL) rotate() error {
 	}
 
 	// Create new file
-	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to create new WAL file: %w", err)
 	}
@@ -256,13 +256,13 @@ func (w *WAL) rotate() error {
 	return nil
 }
 
-// compressArchive compresses archived WAL files
+// compressArchive compresses archived WAL files.
 func (w *WAL) compressArchive(path string) {
 	// Implement compression logic here
 	// For now, just log it
 }
 
-// Close closes the WAL
+// Close closes the WAL.
 func (w *WAL) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -276,7 +276,7 @@ func (w *WAL) Close() error {
 	return nil
 }
 
-// Stats returns WAL statistics
+// Stats returns WAL statistics.
 func (w *WAL) Stats() map[string]interface{} {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -288,7 +288,7 @@ func (w *WAL) Stats() map[string]interface{} {
 	}
 }
 
-// generateID generates a unique ID for WAL entries
+// generateID generates a unique ID for WAL entries.
 func generateID() string {
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
 }

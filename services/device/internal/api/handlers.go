@@ -1,4 +1,3 @@
-// services/device/internal/api/handlers.go
 package api
 
 import (
@@ -12,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// APIHandlers holds all HTTP handlers with concrete service types
+// APIHandlers holds all HTTP handlers with concrete service types.
 type APIHandlers struct {
 	deviceManagement   *core.DeviceManagementService
 	telemetry          *core.TelemetryService
@@ -22,7 +21,7 @@ type APIHandlers struct {
 	authentication     *core.AuthenticationService
 }
 
-// NewAPIHandlers creates a new handler instance with the service registry
+// NewAPIHandlers creates a new handler instance with the service registry.
 func NewAPIHandlers(services *core.ServiceRegistry) *APIHandlers {
 	return &APIHandlers{
 		deviceManagement:   services.DeviceManagement.(*core.DeviceManagementService),
@@ -34,7 +33,7 @@ func NewAPIHandlers(services *core.ServiceRegistry) *APIHandlers {
 	}
 }
 
-// HealthCheck returns service health status
+// HealthCheck returns service health status.
 func (h *APIHandlers) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "healthy",
@@ -45,7 +44,7 @@ func (h *APIHandlers) HealthCheck(c *gin.Context) {
 
 // --- Device Management Endpoints ---
 
-// RegisterDevice handles new device registration
+// RegisterDevice handles new device registration.
 func (h *APIHandlers) RegisterDevice(c *gin.Context) {
 	var device core.Device
 	if err := c.ShouldBindJSON(&device); err != nil {
@@ -68,7 +67,7 @@ func (h *APIHandlers) RegisterDevice(c *gin.Context) {
 	c.JSON(http.StatusCreated, device)
 }
 
-// GetDevice retrieves device details
+// GetDevice retrieves device details.
 func (h *APIHandlers) GetDevice(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -89,7 +88,7 @@ func (h *APIHandlers) GetDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, device)
 }
 
-// ListDevices returns devices for an organization
+// ListDevices returns devices for an organization.
 func (h *APIHandlers) ListDevices(c *gin.Context) {
 	orgID, _ := strconv.ParseUint(c.Query("organization_id"), 10, 32)
 	if orgID == 0 {
@@ -109,7 +108,7 @@ func (h *APIHandlers) ListDevices(c *gin.Context) {
 	})
 }
 
-// UpdateDeviceStatus changes device active status
+// UpdateDeviceStatus changes device active status.
 func (h *APIHandlers) UpdateDeviceStatus(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -139,7 +138,7 @@ func (h *APIHandlers) UpdateDeviceStatus(c *gin.Context) {
 
 // --- Telemetry Endpoints ---
 
-// IngestTelemetry receives device telemetry data via HTTP
+// IngestTelemetry receives device telemetry data via HTTP.
 func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 	// Get raw JSON payload
 	rawPayload, err := c.GetRawData()
@@ -178,7 +177,7 @@ func (h *APIHandlers) IngestTelemetry(c *gin.Context) {
 	})
 }
 
-// IngestBatchTelemetry receives multiple telemetry messages via HTTP
+// IngestBatchTelemetry receives multiple telemetry messages via HTTP.
 func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 	var req struct {
 		Messages []json.RawMessage `json:"messages"`
@@ -216,7 +215,7 @@ func (h *APIHandlers) IngestBatchTelemetry(c *gin.Context) {
 	})
 }
 
-// GetDeviceTelemetry retrieves historical telemetry
+// GetDeviceTelemetry retrieves historical telemetry.
 func (h *APIHandlers) GetDeviceTelemetry(c *gin.Context) {
 	deviceID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -243,7 +242,7 @@ func (h *APIHandlers) GetDeviceTelemetry(c *gin.Context) {
 
 // --- Organization Endpoints ---
 
-// CreateOrganization creates a new organization
+// CreateOrganization creates a new organization.
 func (h *APIHandlers) CreateOrganization(c *gin.Context) {
 	var org core.Organization
 	if err := c.ShouldBindJSON(&org); err != nil {
@@ -259,7 +258,7 @@ func (h *APIHandlers) CreateOrganization(c *gin.Context) {
 	c.JSON(http.StatusCreated, org)
 }
 
-// ListOrganizations returns all organizations
+// ListOrganizations returns all organizations.
 func (h *APIHandlers) ListOrganizations(c *gin.Context) {
 	orgs, err := h.organization.ListOrganizations(c.Request.Context())
 	if err != nil {
@@ -275,7 +274,7 @@ func (h *APIHandlers) ListOrganizations(c *gin.Context) {
 
 // --- Firmware Management Endpoints ---
 
-// UploadFirmware handles firmware file upload
+// UploadFirmware handles firmware file upload.
 func (h *APIHandlers) UploadFirmware(c *gin.Context) {
 	file, header, err := c.Request.FormFile("firmware")
 	if err != nil {
@@ -317,7 +316,7 @@ func (h *APIHandlers) UploadFirmware(c *gin.Context) {
 	c.JSON(http.StatusCreated, firmware)
 }
 
-// ListFirmwareReleases returns available firmware
+// ListFirmwareReleases returns available firmware.
 func (h *APIHandlers) ListFirmwareReleases(c *gin.Context) {
 	channel := c.Query("channel")
 
@@ -333,7 +332,7 @@ func (h *APIHandlers) ListFirmwareReleases(c *gin.Context) {
 	})
 }
 
-// PromoteFirmwareRelease changes release status
+// PromoteFirmwareRelease changes release status.
 func (h *APIHandlers) PromoteFirmwareRelease(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -383,7 +382,7 @@ func (h *APIHandlers) PromoteFirmwareRelease(c *gin.Context) {
 
 // --- OTA Update Endpoints ---
 
-// CheckForUpdates checks if device has available updates
+// CheckForUpdates checks if device has available updates.
 func (h *APIHandlers) CheckForUpdates(c *gin.Context) {
 	deviceUID := c.Param("uid")
 	currentVersion := c.Query("version")
@@ -417,7 +416,7 @@ func (h *APIHandlers) CheckForUpdates(c *gin.Context) {
 	})
 }
 
-// DownloadFirmwareChunk handles chunked firmware download
+// DownloadFirmwareChunk handles chunked firmware download.
 func (h *APIHandlers) DownloadFirmwareChunk(c *gin.Context) {
 	sessionID := c.Param("session")
 	offset, _ := strconv.ParseInt(c.Query("offset"), 10, 64)
@@ -445,7 +444,7 @@ func (h *APIHandlers) DownloadFirmwareChunk(c *gin.Context) {
 	c.Data(http.StatusOK, "application/octet-stream", chunk)
 }
 
-// CompleteUpdate marks update as complete
+// CompleteUpdate marks update as complete.
 func (h *APIHandlers) CompleteUpdate(c *gin.Context) {
 	sessionID := c.Param("session")
 
@@ -472,7 +471,7 @@ func (h *APIHandlers) CompleteUpdate(c *gin.Context) {
 
 // --- Admin Endpoints ---
 
-// GetSystemStats returns system statistics
+// GetSystemStats returns system statistics.
 func (h *APIHandlers) GetSystemStats(c *gin.Context) {
 	stats := gin.H{
 		"telemetry": h.telemetry.GetIngestionStats(),

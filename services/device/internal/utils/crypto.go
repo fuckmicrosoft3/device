@@ -1,76 +1,77 @@
+// services/device/internal/utils/signing.go
 package utils
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
+	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"math/big"
+	"os"
 )
 
-// ecdsaSignature is a helper struct to ASN.1 marshal the R and S values of a signature.
-type ecdsaSignature struct {
-	R, S *big.Int
-}
-
-// SigningKey holds an ECDSA private key for signing operations.
+// SigningKey handles firmware signing operations.
 type SigningKey struct {
-	privateKey *ecdsa.PrivateKey
+	privateKey *rsa.PrivateKey
+	publicKey  *rsa.PublicKey
 }
 
-// GenerateSigningKey creates a new P256 ECDSA private key.
-func GenerateSigningKey() (*SigningKey, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate key: %w", err)
-	}
-	return &SigningKey{privateKey: privateKey}, nil
-}
-
-// LoadSigningKey reads a PEM-encoded EC private key from a file.
+// LoadSigningKey loads a private key from file.
 func LoadSigningKey(path string) (*SigningKey, error) {
-	keyData, err := ioutil.ReadFile(path)
+	keyData, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
 
 	block, _ := pem.Decode(keyData)
 	if block == nil {
-		return nil, errors.New("failed to decode PEM block from key file")
+		return nil, errors.New("failed to parse PEM block")
 	}
 
-	privateKey, err := x509.ParseECPrivateKey(block.Bytes)
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse EC private key: %w", err)
+		// Try PKCS8 format
+		privInterface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+		var ok bool
+		priv, ok = privInterface.(*rsa.PrivateKey)
+		if !ok {
+			return nil, errors.New("not an RSA private key")
+		}
 	}
 
-	return &SigningKey{privateKey: privateKey}, nil
+	return &SigningKey{
+		privateKey: priv,
+		publicKey:  &priv.PublicKey,
+	}, nil
 }
 
-// Sign calculates the SHA256 hash of the data and signs it with the private key.
-// The signature is returned as a Base64-encoded string.
+// Sign creates a digital signature for the given data.
 func (s *SigningKey) Sign(data []byte) (string, error) {
 	hash := sha256.Sum256(data)
 
-	// ecdsa.Sign returns two integers, r and s, which form the signature.
-	r, sVal, err := ecdsa.Sign(rand.Reader, s.privateKey, hash[:])
+	signature, err := rsa.SignPKCS1v15(rand.Reader, s.privateKey, crypto.SHA256, hash[:])
 	if err != nil {
 		return "", fmt.Errorf("failed to sign data: %w", err)
 	}
 
-	// We need to marshal r and s into a single byte slice. ASN.1 is the standard format.
-	signatureBytes, err := asn1.Marshal(ecdsaSignature{r, sVal})
+	return base64.StdEncoding.EncodeToString(signature), nil
+}
+
+// Verify verifies a signature against data.
+func (s *SigningKey) Verify(data []byte, signature string) error {
+	sig, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal signature: %w", err)
+		return fmt.Errorf("failed to decode signature: %w", err)
 	}
 
-	// Return the signature as a Base64 encoded string for easy transport.
-	return base64.StdEncoding.EncodeToString(signatureBytes), nil
+	hash := sha256.Sum256(data)
+
+	return rsa.VerifyPKCS1v15(s.publicKey, crypto.SHA256, hash[:], sig)
 }

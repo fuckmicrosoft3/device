@@ -1,9 +1,16 @@
+// services/device/main.go
 package main
 
 import (
+	"log"
+	"os"
+
 	"example.com/backstage/services/device/cmd"
 )
 
 func main() {
-	cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
 }

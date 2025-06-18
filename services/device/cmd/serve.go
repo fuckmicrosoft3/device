@@ -4,6 +4,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -186,13 +187,16 @@ func setupMQTTSubscriber(telemetry *core.TelemetryService, deviceManagement *cor
 	}
 
 	mqttConfig := infrastructure.MQTTConfig{
-		BrokerURL:    cfg.MQTT.BrokerURL,
-		ClientID:     cfg.MQTT.ClientID,
-		Username:     cfg.MQTT.Username,
-		Password:     cfg.MQTT.Password,
-		QoS:          cfg.MQTT.QoS,
-		CleanSession: cfg.MQTT.CleanSession,
-		Topics:       cfg.MQTT.Topics,
+		BrokerURL:         cfg.MQTT.BrokerURL,
+		ClientID:          cfg.MQTT.ClientID,
+		Username:          cfg.MQTT.Username,
+		Password:          cfg.MQTT.Password,
+		QoS:               cfg.MQTT.QoS,
+		CleanSession:      cfg.MQTT.CleanSession,
+		Topics:            cfg.MQTT.Topics,
+		KeepAlive:         cfg.MQTT.KeepAlive,
+		ConnectTimeout:    cfg.MQTT.ConnectTimeout,
+		MaxReconnectDelay: cfg.MQTT.MaxReconnectDelay,
 	}
 
 	subscriber, err := infrastructure.NewMQTTSubscriber(mqttConfig, logger)
@@ -214,7 +218,7 @@ func setupMQTTSubscriber(telemetry *core.TelemetryService, deviceManagement *cor
 		}
 
 		if mqttMsg.DeviceUID == "" || len(mqttMsg.Telemetry) == 0 {
-			return fmt.Errorf("invalid MQTT telemetry message: missing device_uid or telemetry")
+			return errors.New("invalid MQTT telemetry message: missing device_uid or telemetry")
 		}
 
 		// Get device information

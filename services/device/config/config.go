@@ -58,7 +58,7 @@ type ServiceBusConfig struct {
 	RetryDelay       time.Duration `mapstructure:"retry_delay"`
 }
 
-// MQTTConfig holds MQTT broker settings for telemetry ingestion
+// MQTTConfig holds MQTT broker settings for telemetry ingestion.
 type MQTTConfig struct {
 	BrokerURL         string        `mapstructure:"broker_url"`
 	ClientID          string        `mapstructure:"client_id"`
@@ -88,7 +88,7 @@ type OTAConfig struct {
 	RetryAttempts        int           `mapstructure:"retry_attempts"`
 }
 
-// StorageConfig holds settings for persistent storage
+// StorageConfig holds settings for persistent storage.
 type StorageConfig struct {
 	WALPath        string `mapstructure:"wal_path"`
 	DeadLetterPath string `mapstructure:"dead_letter_path"`
@@ -96,12 +96,12 @@ type StorageConfig struct {
 	RetentionDays  int    `mapstructure:"retention_days"`
 }
 
-// QueueRoutingConfig holds queue routing configuration for telemetry
+// QueueRoutingConfig holds queue routing configuration for telemetry.
 type QueueRoutingConfig struct {
 	Organizations []QueueConfig `mapstructure:"organizations"`
 }
 
-// QueueConfig holds queue configuration for an organization
+// QueueConfig holds queue configuration for an organization.
 type QueueConfig struct {
 	OrganizationName string       `mapstructure:"organization_name"`
 	Environment      string       `mapstructure:"environment"`
@@ -109,7 +109,7 @@ type QueueConfig struct {
 	QueueRoutes      []QueueRoute `mapstructure:"queue_routes"`
 }
 
-// QueueRoute maps telemetry types to queue names
+// QueueRoute maps telemetry types to queue names.
 type QueueRoute struct {
 	QueueName      string   `mapstructure:"queue_name"`
 	TelemetryTypes []string `mapstructure:"telemetry_types"`

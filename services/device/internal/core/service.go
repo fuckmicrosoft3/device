@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// FirmwareMetadata contains metadata for firmware releases
+// FirmwareMetadata contains metadata for firmware releases.
 type FirmwareMetadata struct {
 	Filename       string
 	Version        string
@@ -72,6 +72,9 @@ func (s *DeviceManagementService) RegisterDevice(ctx context.Context, device *De
 	if err == nil && len(devices) >= org.DeviceLimit {
 		return BusinessError{"ORG_003", "organization device limit reached"}
 	}
+
+	// Set organization name on device
+	device.OrganizationName = org.Name
 
 	if err := s.store.CreateDevice(ctx, device); err != nil {
 		return fmt.Errorf("failed to register device: %w", err)
@@ -152,7 +155,7 @@ func (s *DeviceManagementService) RecordHeartbeat(ctx context.Context, deviceUID
 func (s *DeviceManagementService) cacheDevice(ctx context.Context, device *Device) {
 	if s.cache != nil {
 		data, _ := json.Marshal(device)
-		s.cache.Set(ctx, fmt.Sprintf("device:%s", device.DeviceUID), string(data), 24*time.Hour)
+		s.cache.Set(ctx, "device:"+device.DeviceUID, string(data), 24*time.Hour)
 	}
 }
 
@@ -161,7 +164,7 @@ func (s *DeviceManagementService) getCachedDevice(ctx context.Context, uid strin
 		return nil, errors.New("cache not available")
 	}
 
-	data, err := s.cache.Get(ctx, fmt.Sprintf("device:%s", uid))
+	data, err := s.cache.Get(ctx, "device:"+uid)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +188,7 @@ type TelemetryService struct {
 }
 
 func NewTelemetryService(store DataStore, messaging *infrastructure.Messaging, logger *logrus.Logger, cfg config.QueueRoutingConfig) *TelemetryService {
-	queueRouter := NewQueueRouter(cfg)
+	queueRouter := NewQueueRouter(cfg, logger)
 	processor := NewTelemetryProcessor(store, messaging, logger, queueRouter)
 	svc := &TelemetryService{
 		store:       store,
@@ -350,16 +353,16 @@ func (s *TelemetryService) Stop() {
 	s.processor.Stop()
 }
 
-// QueueRouter handles routing telemetry to appropriate queues
+// QueueRouter handles routing telemetry to appropriate queues.
 type QueueRouter struct {
 	routes map[string]map[string]string // organization -> telemetryType -> queueName
 	logger *logrus.Logger
 }
 
-func NewQueueRouter(cfg config.QueueRoutingConfig) *QueueRouter {
+func NewQueueRouter(cfg config.QueueRoutingConfig, logger *logrus.Logger) *QueueRouter {
 	router := &QueueRouter{
 		routes: make(map[string]map[string]string),
-		logger: logrus.New(),
+		logger: logger,
 	}
 
 	// Build routing table from configuration
@@ -390,7 +393,7 @@ func (r *QueueRouter) GetQueueForTelemetry(organizationName, telemetryType strin
 	return queueName, nil
 }
 
-// TelemetryProcessor handles async telemetry processing with reliability
+// TelemetryProcessor handles async telemetry processing with reliability.
 type TelemetryProcessor struct {
 	store         DataStore
 	messaging     *infrastructure.Messaging
@@ -445,7 +448,7 @@ func (p *TelemetryProcessor) Start(workers int) {
 	p.workers = workers
 
 	// Start main workers
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		p.wg.Add(1)
 		go p.worker(i)
 	}
@@ -744,7 +747,7 @@ func NewFirmwareManagementService(store DataStore, logger *logrus.Logger, cfg co
 	}
 
 	// Ensure firmware storage exists
-	if err := os.MkdirAll(cfg.StoragePath, 0755); err != nil {
+	if err := os.MkdirAll(cfg.StoragePath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create firmware storage: %w", err)
 	}
 
@@ -779,12 +782,12 @@ func (s *FirmwareManagementService) CreateRelease(ctx context.Context, data []by
 	storagePath := filepath.Join(s.storagePath, metadata.ReleaseChannel, filename)
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(storagePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(storagePath), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
 	// Write file
-	if err := os.WriteFile(storagePath, data, 0644); err != nil {
+	if err := os.WriteFile(storagePath, data, 0o644); err != nil {
 		return nil, fmt.Errorf("failed to save firmware: %w", err)
 	}
 
@@ -882,8 +885,10 @@ func (s *FirmwareManagementService) PromoteRelease(ctx context.Context, id uint,
 	}
 
 	if !allowed {
-		return BusinessError{"FIRMWARE_008",
-			fmt.Sprintf("invalid status transition from %s to %s", release.ReleaseStatus, newStatus)}
+		return BusinessError{
+			"FIRMWARE_008",
+			fmt.Sprintf("invalid status transition from %s to %s", release.ReleaseStatus, newStatus),
+		}
 	}
 
 	release.ReleaseStatus = newStatus

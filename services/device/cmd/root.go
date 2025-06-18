@@ -1,7 +1,7 @@
+// services/device/cmd/root.go
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"example.com/backstage/services/device/config"
@@ -15,39 +15,44 @@ var (
 	logger  *logrus.Logger
 )
 
-// rootCmd represents the base command when called without any subcommands.
+// rootCmd represents the base command.
 var rootCmd = &cobra.Command{
 	Use:   "device-service",
-	Short: "A service for managing IoT devices and firmware updates.",
-	Long: `This service provides a backend for device registration, messaging,
-and over-the-air (OTA) firmware updates.`,
-	// This will run before any sub-command, ensuring config is always loaded.
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize Logger
-		logger = logrus.New()
-		logger.SetFormatter(&logrus.JSONFormatter{})
-		logger.SetOutput(os.Stdout)
-		logger.SetLevel(logrus.InfoLevel)
-
-		// Load Config
-		var err error
-		cfg, err = config.Load(cfgFile)
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
-		cfg.Logger = logger
-		return nil
-	},
+	Short: "IoT Device Management Service",
+	Long: `A comprehensive service for managing IoT devices, including
+device registration, telemetry ingestion, firmware management, and OTA updates.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Whoops. There was an error while executing your CLI '%s'", err)
-		os.Exit(1)
-	}
+func Execute() error {
+	return rootCmd.Execute()
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "config/config.yaml", "config file (default is ./config/config.yaml)")
+	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config/config.yaml", "config file path")
+}
+
+func initConfig() {
+	// Initialize logger
+	logger = logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	// Set log level from environment
+	if level := os.Getenv("LOG_LEVEL"); level != "" {
+		logLevel, err := logrus.ParseLevel(level)
+		if err == nil {
+			logger.SetLevel(logLevel)
+		}
+	}
+
+	// Load configuration
+	var err error
+	cfg, err = config.Load(cfgFile)
+	if err != nil {
+		logger.Fatalf("Failed to load config: %v", err)
+	}
+
+	cfg.Logger = logger
+	logger.Info("Configuration loaded successfully")
 }
