@@ -8,7 +8,7 @@ server:
   write_timeout: 15s
 
 database:
-  dsn: "host=db user=postgres password=password dbname=device_db port=5432 sslmode=disable"
+  dsn: "host=localhost user=postgres password=postgres dbname=device_db port=5432 sslmode=disable"
   max_open_conns: 25
   max_idle_conns: 10
   conn_max_lifetime: 5m
@@ -16,7 +16,7 @@ database:
   enable_tracing: false
 
 redis:
-  addr: "redis:6379"
+  addr: "localhost:6379"
   password: ""
   db: 0
   pool_size: 10
@@ -45,7 +45,7 @@ mqtt:
   max_reconnect_delay: 2m
 
 firmware:
-  storage_path: "/data/firmware"
+  storage_path: "/home/kev/dev/backstage/services/device/data/firmware"
   max_file_size: 10485760 # 10MB
   signing_enabled: false
   private_key_path: "" 
