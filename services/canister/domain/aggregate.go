@@ -9,11 +9,11 @@ import (
 
 // AggregateBase provides common aggregate functionality
 type AggregateBase struct {
-	id           string
+	id            string
 	aggregateType string
-	version      int
-	events       []Event
-	applier      func(event interface{}) error
+	version       int
+	events        []Event
+	applier       func(event interface{}) error
 }
 
 // Aggregate is the interface for all aggregates
@@ -29,11 +29,11 @@ type Aggregate interface {
 // NewAggregateBase creates a new aggregate base
 func NewAggregateBase(aggregateType string, applier func(interface{}) error) *AggregateBase {
 	return &AggregateBase{
-		id:           uuid.New().String(),
+		id:            uuid.New().String(),
 		aggregateType: aggregateType,
-		version:      0,
-		events:       []Event{},
-		applier:      applier,
+		version:       0,
+		events:        []Event{},
+		applier:       applier,
 	}
 }
 
@@ -116,7 +116,7 @@ func (a *AggregateBase) Apply(event interface{}) error {
 		domainEvent.Type = CanisterRefillerExit
 	case CanisterRefillSessionEvent:
 		domainEvent.Type = CanisterRefillSession
-	
+
 	// Delivery events
 	case DeliveryNoteCreatedEvent:
 		domainEvent.Type = DeliveryNoteCreated
@@ -130,7 +130,7 @@ func (a *AggregateBase) Apply(event interface{}) error {
 
 	// Store the event
 	a.events = append(a.events, domainEvent)
-	
+
 	// Increment version
 	a.version++
 

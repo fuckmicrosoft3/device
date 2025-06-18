@@ -7,24 +7,24 @@ import (
 // EventType constants
 const (
 	// Canister events
-	CanisterCreated         = "V1_CANISTER_CREATED"
-	CanisterUpdated         = "V1_CANISTER_UPDATED"
-	CanisterEntry           = "V1_CANISTER_ENTRY"
-	CanisterExit            = "V1_CANISTER_EXIT"
-	CanisterCheck           = "V1_CANISTER_CHECK"
-	CanisterDamage          = "V1_CANISTER_DAMAGE"
-	CanisterOrgCheckIn      = "V1_CANISTER_ORGANIZATION_CHECK_IN"
-	CanisterOrgCheckOut     = "V1_CANISTER_ORGANIZATION_CHECK_OUT"
-	CanisterRestoreDamage   = "V1_CANISTER_RESTORE_DAMAGE"
-	CanisterRestoreTamper   = "V1_CANISTER_RESTORE_TAMPER"
-	CanisterRefillerEntry   = "V1_CANISTER_REFILLER_ENTRY"
-	CanisterRefillerExit    = "V1_CANISTER_REFILLER_EXIT"
-	CanisterRefillSession   = "V1_CANISTER_REFILL_SESSION"
-	
+	CanisterCreated       = "V1_CANISTER_CREATED"
+	CanisterUpdated       = "V1_CANISTER_UPDATED"
+	CanisterEntry         = "V1_CANISTER_ENTRY"
+	CanisterExit          = "V1_CANISTER_EXIT"
+	CanisterCheck         = "V1_CANISTER_CHECK"
+	CanisterDamage        = "V1_CANISTER_DAMAGE"
+	CanisterOrgCheckIn    = "V1_CANISTER_ORGANIZATION_CHECK_IN"
+	CanisterOrgCheckOut   = "V1_CANISTER_ORGANIZATION_CHECK_OUT"
+	CanisterRestoreDamage = "V1_CANISTER_RESTORE_DAMAGE"
+	CanisterRestoreTamper = "V1_CANISTER_RESTORE_TAMPER"
+	CanisterRefillerEntry = "V1_CANISTER_REFILLER_ENTRY"
+	CanisterRefillerExit  = "V1_CANISTER_REFILLER_EXIT"
+	CanisterRefillSession = "V1_CANISTER_REFILL_SESSION"
+
 	// Delivery events
-	DeliveryNoteCreated     = "V1_DELIVERY_NOTE_CREATED"
-	DeliveryItemsAdded      = "V1_DELIVERY_ITEMS_ADDED"
-	DeliveryItemRemoved     = "V1_DELIVERY_ITEM_REMOVED"
+	DeliveryNoteCreated = "V1_DELIVERY_NOTE_CREATED"
+	DeliveryItemsAdded  = "V1_DELIVERY_ITEMS_ADDED"
+	DeliveryItemRemoved = "V1_DELIVERY_ITEM_REMOVED"
 )
 
 // Event represents a domain event

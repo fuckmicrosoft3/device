@@ -77,14 +77,14 @@ type Machine struct {
 
 // Organization represents an organization in the database
 type Organization struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	OrgID        uuid.UUID      `gorm:"uniqueIndex" json:"org_id"`
-	OrgName      string         `json:"org_name"`
-	ParentOrgID  *uuid.UUID     `json:"parent_org_id"`
-	Attributes   []byte         `json:"attributes"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	OrgID       uuid.UUID      `gorm:"uniqueIndex" json:"org_id"`
+	OrgName     string         `json:"org_name"`
+	ParentOrgID *uuid.UUID     `json:"parent_org_id"`
+	Attributes  []byte         `json:"attributes"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at"`
 }
 
 // CompleteMovement represents a complete movement in the database

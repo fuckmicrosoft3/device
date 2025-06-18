@@ -8,11 +8,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/models"
- 	"example.com/backstage/services/canister/eventstore"
-  	"example.com/backstage/services/canister/domain"
-
-
+	"go.novek.io/canister/domain"
+	"go.novek.io/canister/eventstore"
+	"go.novek.io/canister/models"
 )
 
 // EventProcessor processes events from the database and projects them
@@ -30,21 +28,21 @@ type EventProcessor struct {
 
 // NewEventProcessor creates a new event processor
 func NewEventProcessor(
-    db *gorm.DB, 
-    canisterProjector *CanisterProjector, 
-    deliveryProjector *DeliveryProjector,
-    eventStore *eventstore.GormEventStore,
+	db *gorm.DB,
+	canisterProjector *CanisterProjector,
+	deliveryProjector *DeliveryProjector,
+	eventStore *eventstore.GormEventStore,
 ) *EventProcessor {
-    return &EventProcessor{
-        db:                 db,
-        canisterProjector:  canisterProjector,
-        deliveryProjector:  deliveryProjector,
-        eventStore:        eventStore,
-        batchSize:          100,
-        processingInterval: 5 * time.Second,
-        running:            false,
-        stopChan:           make(chan struct{}),
-    }
+	return &EventProcessor{
+		db:                 db,
+		canisterProjector:  canisterProjector,
+		deliveryProjector:  deliveryProjector,
+		eventStore:         eventStore,
+		batchSize:          100,
+		processingInterval: 5 * time.Second,
+		running:            false,
+		stopChan:           make(chan struct{}),
+	}
 }
 
 // Start starts the event processor
@@ -133,27 +131,27 @@ func (p *EventProcessor) processBatch() error {
 
 // processEvent processes a single event
 func (p *EventProcessor) processEvent(event models.Event) error {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // Convert to domain.Event
-    domainEvent := domain.Event{
-        ID:            event.EventID,
-        AggregateID:   event.AggregateID,
-        AggregateType: event.AggregateType,
-        Type:          event.EventType,
-        Version:       event.Version,
-        Timestamp:     event.Timestamp,
-        Data:          event.Data,
-    }
+	// Convert to domain.Event
+	domainEvent := domain.Event{
+		ID:            event.EventID,
+		AggregateID:   event.AggregateID,
+		AggregateType: event.AggregateType,
+		Type:          event.EventType,
+		Version:       event.Version,
+		Timestamp:     event.Timestamp,
+		Data:          event.Data,
+	}
 
-    // Determine which projector to use based on the aggregate type
-    switch event.AggregateType {
-    case "canister":
-        return p.canisterProjector.Project(ctx, domainEvent)
-    case "delivery":
-        return p.deliveryProjector.Project(ctx, domainEvent)
-    default:
-        log.Warn().Str("aggregate_type", event.AggregateType).Msg("Unknown aggregate type")
-        return nil
-    }
+	// Determine which projector to use based on the aggregate type
+	switch event.AggregateType {
+	case "canister":
+		return p.canisterProjector.Project(ctx, domainEvent)
+	case "delivery":
+		return p.deliveryProjector.Project(ctx, domainEvent)
+	default:
+		log.Warn().Str("aggregate_type", event.AggregateType).Msg("Unknown aggregate type")
+		return nil
+	}
 }

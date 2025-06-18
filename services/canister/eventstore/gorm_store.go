@@ -10,8 +10,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/domain"
-	"example.com/backstage/services/canister/models"
+	"go.novek.io/canister/domain"
+	"go.novek.io/canister/models"
 )
 
 // GormEventStore implements EventStore using GORM
@@ -97,7 +97,7 @@ func (s *GormEventStore) Load(ctx context.Context, aggregate domain.Aggregate) e
 	for _, dbEvent := range dbEvents {
 		// Get the event data
 		var eventData interface{}
-		
+
 		// Determine the event type and unmarshal accordingly
 		switch dbEvent.EventType {
 		// Canister events
@@ -107,91 +107,91 @@ func (s *GormEventStore) Load(ctx context.Context, aggregate domain.Aggregate) e
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterUpdated:
 			var data domain.CanisterUpdatedEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterEntry:
 			var data domain.CanisterEntryEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterExit:
 			var data domain.CanisterExitEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterCheck:
 			var data domain.CanisterCheckEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterDamage:
 			var data domain.CanisterDamageEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterOrgCheckIn:
 			var data domain.CanisterOrgCheckInEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterOrgCheckOut:
 			var data domain.CanisterOrgCheckOutEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterRestoreDamage:
 			var data domain.CanisterRestoreDamageEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterRestoreTamper:
 			var data domain.CanisterRestoreTamperEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterRefillerEntry:
 			var data domain.CanisterRefillerEntryEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterRefillerExit:
 			var data domain.CanisterRefillerExitEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.CanisterRefillSession:
 			var data domain.CanisterRefillSessionEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		// Delivery events
 		case domain.DeliveryNoteCreated:
 			var data domain.DeliveryNoteCreatedEvent
@@ -199,21 +199,21 @@ func (s *GormEventStore) Load(ctx context.Context, aggregate domain.Aggregate) e
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.DeliveryItemsAdded:
 			var data domain.DeliveryItemsAddedEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		case domain.DeliveryItemRemoved:
 			var data domain.DeliveryItemRemovedEvent
 			if err := json.Unmarshal(dbEvent.Data, &data); err != nil {
 				return fmt.Errorf("failed to unmarshal event data: %w", err)
 			}
 			eventData = data
-			
+
 		default:
 			return fmt.Errorf("unknown event type: %s", dbEvent.EventType)
 		}

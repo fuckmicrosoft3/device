@@ -28,11 +28,11 @@ func NewDeliveryNoteAggregate(id string) *DeliveryNoteAggregate {
 			ID: id,
 		},
 	}
-	
+
 	base := NewAggregateBase("delivery", aggregate.applyEvent)
 	base.SetID(id)
 	aggregate.AggregateBase = base
-	
+
 	return aggregate
 }
 
@@ -42,10 +42,10 @@ func (a *DeliveryNoteAggregate) applyEvent(event interface{}) error {
 	case DeliveryNoteCreatedEvent:
 		a.State.ID = e.ID
 		a.State.OrganizationID = e.OrganizationID
-		
+
 	case DeliveryItemsAddedEvent:
 		a.State.DeliveryItems = append(a.State.DeliveryItems, e.DeliveryItems...)
-		
+
 	case DeliveryItemRemovedEvent:
 		// Remove item with the specified ID
 		for i, item := range a.State.DeliveryItems {
@@ -55,6 +55,6 @@ func (a *DeliveryNoteAggregate) applyEvent(event interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }

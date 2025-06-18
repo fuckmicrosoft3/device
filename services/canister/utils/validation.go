@@ -54,11 +54,11 @@ func RegisterCustomValidations() {
 	validate.RegisterValidation("canister_id", func(fl validator.FieldLevel) bool {
 		return ValidateCanisterID(fl.Field().String()) == nil
 	})
-	
+
 	validate.RegisterValidation("aggregate_id", func(fl validator.FieldLevel) bool {
 		return ValidateAggregateID(fl.Field().String()) == nil
 	})
-	
+
 	validate.RegisterValidation("mcu", func(fl validator.FieldLevel) bool {
 		return IsValidMCU(fl.Field().String())
 	})

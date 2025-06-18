@@ -8,7 +8,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/rs/zerolog/log"
 
-	"example.com/backstage/services/canister/config"
+	"go.novek.io/canister/config"
 )
 
 type AzureClient struct {

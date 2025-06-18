@@ -8,18 +8,18 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/config"
-	"example.com/backstage/services/canister/handlers"
+	"go.novek.io/canister/config"
+	"go.novek.io/canister/handlers"
 )
 
 // Server is the HTTP server for the API
 type Server struct {
-	cfg              config.Config
-	router           *gin.Engine
-	httpServer       *http.Server
-	db               *gorm.DB
-	canisterHandler  *handlers.CanisterHandler
-	deliveryHandler  *handlers.DeliveryHandler
+	cfg             config.Config
+	router          *gin.Engine
+	httpServer      *http.Server
+	db              *gorm.DB
+	canisterHandler *handlers.CanisterHandler
+	deliveryHandler *handlers.DeliveryHandler
 }
 
 // NewServer creates a new API server
@@ -45,13 +45,13 @@ func NewServer(cfg config.Config, db *gorm.DB, canisterHandler *handlers.Caniste
 func (s *Server) setupMiddleware() {
 	// Add request ID middleware
 	s.router.Use(RequestIDMiddleware())
-	
+
 	// Add CORS middleware
 	s.router.Use(CORSMiddleware())
-	
+
 	// Add recovery middleware
 	s.router.Use(gin.Recovery())
-	
+
 	// Add logging middleware
 	s.router.Use(LoggingMiddleware())
 }
@@ -65,7 +65,7 @@ func (s *Server) setupRoutes() {
 
 	// API v1 group
 	v1 := s.router.Group("/api/v1")
-	
+
 	// Canister routes
 	canisterRoutes := v1.Group("/canister")
 	{
@@ -73,7 +73,7 @@ func (s *Server) setupRoutes() {
 		canisterRoutes.GET("/:id", s.getCanisterAggregate)
 		canisterRoutes.GET("/distribution", s.getOrgCanistersForDistribution)
 	}
-	
+
 	// Delivery routes
 	deliveryRoutes := v1.Group("/delivery")
 	{

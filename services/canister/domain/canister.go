@@ -32,11 +32,11 @@ func NewCanisterAggregate(id string) *CanisterAggregate {
 			AggregateID: id,
 		},
 	}
-	
+
 	base := NewAggregateBase("canister", aggregate.applyEvent)
 	base.SetID(id)
 	aggregate.AggregateBase = base
-	
+
 	return aggregate
 }
 
@@ -55,7 +55,7 @@ func (a *CanisterAggregate) applyEvent(event any) error {
 		// Default values
 		a.State.CurrentVolume = 20.0
 		a.State.TamperState = "NO_TAMPER"
-		
+
 	case CanisterUpdatedEvent:
 		a.State.Tag = e.Tag
 		a.State.MCU = e.MCU
@@ -64,29 +64,29 @@ func (a *CanisterAggregate) applyEvent(event any) error {
 		a.State.Status = e.Status
 		a.State.OrganisationID = e.OrganisationID
 		a.State.Attributes = e.Attributes
-		
+
 	case CanisterEntryEvent:
 		a.State.LastMovementID = e.MovementID
-		
+
 	case CanisterExitEvent:
 		a.State.LastMovementID = e.MovementID
-		
+
 	case CanisterCheckEvent:
 		// Parse payload to extract temperature, volume, and tamper information
-		
+
 	case CanisterDamageEvent:
 		a.State.Status = "Damaged"
-		
+
 	case CanisterRestoreDamageEvent:
 		a.State.Status = "ReadyForUse"
-		
+
 	case CanisterRestoreTamperEvent:
 		a.State.TamperState = "NO_TAMPER"
 		a.State.TamperSources = nil
-		
+
 	case CanisterRefillSessionEvent:
 		a.State.CurrentVolume = e.ActualVolume
 	}
-	
+
 	return nil
 }

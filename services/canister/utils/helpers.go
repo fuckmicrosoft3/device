@@ -104,11 +104,11 @@ func ParseAttributes(attributes []byte) (map[string]interface{}, error) {
 	if len(attributes) == 0 {
 		return result, nil
 	}
-	
+
 	if err := json.Unmarshal(attributes, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal attributes: %w", err)
 	}
-	
+
 	return result, nil
 }
 
@@ -119,21 +119,21 @@ func ExtractOrganizationIDs(attributes []byte) ([]string, error) {
 		OrgName     string `json:"orgName"`
 		ParentOrgID string `json:"parentOrgId"`
 	}
-	
+
 	type Organizations struct {
 		Organizations []Organization `json:"organisations"`
 	}
-	
+
 	var orgs Organizations
 	if err := json.Unmarshal(attributes, &orgs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal organizations: %w", err)
 	}
-	
+
 	var orgIDs []string
 	for _, org := range orgs.Organizations {
 		orgIDs = append(orgIDs, org.OrgID)
 	}
-	
+
 	return orgIDs, nil
 }
 

@@ -9,18 +9,18 @@ import (
 	"github.com/elastic/go-elasticsearch/v7"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/config"
-	"example.com/backstage/services/canister/domain"
-	"example.com/backstage/services/canister/models"
-	"example.com/backstage/services/canister/utils"
+	"go.novek.io/canister/config"
+	"go.novek.io/canister/domain"
+	"go.novek.io/canister/models"
+	"go.novek.io/canister/utils"
 )
 
 // Constants for index names
 const (
-	CanistersIndex          = "canisters"
-	CanisterEventsIndex     = "canister-events"
-	CanisterMovementsIndex  = "canister-movements"
-	CanisterRefillsIndex    = "canister-refills-sessions"
+	CanistersIndex         = "canisters"
+	CanisterEventsIndex    = "canister-events"
+	CanisterMovementsIndex = "canister-movements"
+	CanisterRefillsIndex   = "canister-refills-sessions"
 )
 
 // CanisterProjector handles projections for canister events
@@ -87,19 +87,19 @@ func (p *CanisterProjector) projectCanisterCreated(ctx context.Context, event do
 
 	// Create canister in database
 	canister := models.Canister{
-		CanisterID:         data.CanisterID,
-		AggregateID:        event.AggregateID,
-		Version:            int32(event.Version),
-		Tag:                data.Tag,
-		Mcu:                data.MCU,
-		Model:              data.Model,
-		Name:               data.Name,
-		Status:             data.Status,
-		Attributes:         data.Attributes,
-		CurrentVolume:      &defaultVolume,
-		TamperState:        &defaultTamperState,
-		CreatedAt:          event.Timestamp,
-		UpdatedAt:          event.Timestamp,
+		CanisterID:    data.CanisterID,
+		AggregateID:   event.AggregateID,
+		Version:       int32(event.Version),
+		Tag:           data.Tag,
+		Mcu:           data.MCU,
+		Model:         data.Model,
+		Name:          data.Name,
+		Status:        data.Status,
+		Attributes:    data.Attributes,
+		CurrentVolume: &defaultVolume,
+		TamperState:   &defaultTamperState,
+		CreatedAt:     event.Timestamp,
+		UpdatedAt:     event.Timestamp,
 	}
 
 	if err := p.db.WithContext(ctx).Create(&canister).Error; err != nil {
@@ -166,14 +166,14 @@ func (p *CanisterProjector) projectCanisterUpdated(ctx context.Context, event do
 
 	// Update canister in database
 	updateFields := map[string]interface{}{
-		"version":        event.Version,
-		"tag":            data.Tag,
-		"mcu":            data.MCU,
-		"model":          data.Model,
-		"name":           data.Name,
-		"status":         data.Status,
-		"attributes":     data.Attributes,
-		"updated_at":     event.Timestamp,
+		"version":    event.Version,
+		"tag":        data.Tag,
+		"mcu":        data.MCU,
+		"model":      data.Model,
+		"name":       data.Name,
+		"status":     data.Status,
+		"attributes": data.Attributes,
+		"updated_at": event.Timestamp,
 	}
 
 	if err := p.db.WithContext(ctx).Model(&models.Canister{}).
@@ -339,48 +339,48 @@ func (p *CanisterProjector) projectCanisterCheck(ctx context.Context, event doma
 // projectCanisterEntry handles the canister entry event
 func (p *CanisterProjector) projectCanisterEntry(ctx context.Context, event domain.Event) error {
 	// Implementation for canister entry event
-    // This would create movement entries and update canister location
-    return nil
+	// This would create movement entries and update canister location
+	return nil
 }
 
 // projectCanisterExit handles the canister exit event
 func (p *CanisterProjector) projectCanisterExit(ctx context.Context, event domain.Event) error {
 	// Implementation for canister exit event
-    return nil
+	return nil
 }
 
-// projectCanisterDamage handles the canister damage event 
+// projectCanisterDamage handles the canister damage event
 func (p *CanisterProjector) projectCanisterDamage(ctx context.Context, event domain.Event) error {
 	// Implementation for canister damage event
-    return nil
+	return nil
 }
 
 // Other projection methods...
 func (p *CanisterProjector) projectCanisterOrgCheckIn(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterOrgCheckOut(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterRestoreDamage(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterRestoreTamper(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterRefillerEntry(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterRefillerExit(ctx context.Context, event domain.Event) error {
-    return nil
+	return nil
 }
 
 func (p *CanisterProjector) projectCanisterRefillSession(ctx context.Context, event domain.Event) error {
-    // Implementation for refill session, which might update volume and create refill history
-    return nil
+	// Implementation for refill session, which might update volume and create refill history
+	return nil
 }

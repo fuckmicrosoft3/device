@@ -7,7 +7,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/rs/zerolog/log"
 
-	"example.com/backstage/services/canister/config"
+	"go.novek.io/canister/config"
 )
 
 // NewElasticsearchClient creates a new Elasticsearch client
@@ -57,7 +57,7 @@ func EnsureIndices(client *elasticsearch.Client, cfg config.Config) error {
 
 	for _, index := range indices {
 		formattedIndex := FormatIndex(index, cfg)
-		
+
 		// Check if the index exists
 		exists, err := indexExists(client, formattedIndex)
 		if err != nil {

@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"example.com/backstage/services/canister/handlers"
+	"go.novek.io/canister/handlers"
 )
 
 // DeliveryEventRequest is the request for a delivery event
@@ -37,7 +37,7 @@ func (s *Server) receiveDeliveryEvents(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// If AggregateID is not provided, generate a new one
 		if cmd.AggregateID == "" {
 			cmd.AggregateID = uuid.New().String()

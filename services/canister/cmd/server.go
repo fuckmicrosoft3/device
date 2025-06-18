@@ -12,11 +12,11 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/api"
-	"example.com/backstage/services/canister/eventstore"
-	"example.com/backstage/services/canister/handlers"
-	"example.com/backstage/services/canister/messaging"
-	"example.com/backstage/services/canister/models"
+	"go.novek.io/canister/api"
+	"go.novek.io/canister/eventstore"
+	"go.novek.io/canister/handlers"
+	"go.novek.io/canister/messaging"
+	"go.novek.io/canister/models"
 )
 
 var serverCmd = &cobra.Command{

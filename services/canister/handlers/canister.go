@@ -9,8 +9,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/google/uuid"
 
-	"example.com/backstage/services/canister/domain"
-	"example.com/backstage/services/canister/eventstore"
+	"go.novek.io/canister/domain"
+	"go.novek.io/canister/eventstore"
 )
 
 // Command structs

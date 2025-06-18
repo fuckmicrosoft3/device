@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"example.com/backstage/services/canister/handlers"
-	"example.com/backstage/services/canister/models"
+	"go.novek.io/canister/handlers"
+	"go.novek.io/canister/models"
 )
 
 // CanisterAggregateResponse is the response for a canister aggregate
@@ -75,7 +75,7 @@ func (s *Server) receiveCanisterEvents(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// If AggregateID is not provided, generate a new one
 		if cmd.AggregateID == "" {
 			cmd.AggregateID = uuid.New().String()

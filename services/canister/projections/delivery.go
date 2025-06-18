@@ -9,9 +9,9 @@ import (
 	"github.com/elastic/go-elasticsearch/v7"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/canister/config"
-	"example.com/backstage/services/canister/domain"
-	"example.com/backstage/services/canister/models"
+	"go.novek.io/canister/config"
+	"go.novek.io/canister/domain"
+	"go.novek.io/canister/models"
 )
 
 // Constants for delivery indices

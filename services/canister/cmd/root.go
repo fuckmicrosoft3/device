@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"example.com/backstage/services/canister/config"
+	"go.novek.io/canister/config"
 )
 
 var (
@@ -33,7 +33,7 @@ func init() {
 
 func initConfig() {
 	var err error
-	
+
 	if cfgFile != "" {
 		// Use config file from the flag
 		config.SetConfigFile(cfgFile)
