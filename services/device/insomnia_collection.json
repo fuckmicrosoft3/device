@@ -1,0 +1,1016 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-01-01T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "wrk_device_management",
+      "parentId": null,
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "Device Management API",
+      "description": "API collection for Device Management Service",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_device_management",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "access_token": "your_bearer_token_here",
+        "device_auth_token": "device_auth_token_here",
+        "device_uid": "DEV-12345",
+        "device_id": "1",
+        "org_id": "1",
+        "firmware_id": "1",
+        "session_id": "session-12345"
+      },
+      "dataPropertyOrder": null,
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1672531200000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_local",
+      "parentId": "env_base",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "Local",
+      "data": {
+        "base_url": "http://localhost:8080"
+      },
+      "dataPropertyOrder": null,
+      "color": "#7d69cb",
+      "isPrivate": false,
+      "metaSortKey": 1672531200000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_staging",
+      "parentId": "env_base",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "Staging",
+      "data": {
+        "base_url": "https://api-staging.yourcompany.com"
+      },
+      "dataPropertyOrder": null,
+      "color": "#ff9500",
+      "isPrivate": false,
+      "metaSortKey": 1672531201000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_production",
+      "parentId": "env_base",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "Production",
+      "data": {
+        "base_url": "https://api.yourcompany.com"
+      },
+      "dataPropertyOrder": null,
+      "color": "#d70000",
+      "isPrivate": false,
+      "metaSortKey": 1672531202000,
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_public",
+      "parentId": "wrk_device_management",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "🌐 Public",
+      "description": "Public endpoints",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1672531200000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_device",
+      "parentId": "wrk_device_management",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "📱 Device API",
+      "description": "Device endpoints (device auth)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1672531199000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_admin",
+      "parentId": "wrk_device_management",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "name": "🔐 Admin API",
+      "description": "Admin endpoints (bearer token)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1672531198000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_health",
+      "parentId": "fld_public",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/health",
+      "name": "Health Check",
+      "description": "Check service health",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1672531200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_device_telemetry",
+      "parentId": "fld_device",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/device/{{ _.device_uid }}/telemetry",
+      "name": "Send Telemetry",
+      "description": "Device sends telemetry data",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"timestamp\": \"2024-01-01T12:00:00Z\",\n  \"temperature\": 25.5,\n  \"humidity\": 60.2,\n  \"battery_level\": 85,\n  \"signal_strength\": -45,\n  \"location\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.0060\n  },\n  \"custom_metrics\": {\n    \"sensor_1\": 123.45,\n    \"sensor_2\": \"active\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Device-Auth",
+          "value": "{{ _.device_auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_check_updates",
+      "parentId": "fld_device",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/device/{{ _.device_uid }}/updates/check",
+      "name": "Check Updates",
+      "description": "Check for firmware updates",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Device-Auth",
+          "value": "{{ _.device_auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531199000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_download_firmware",
+      "parentId": "fld_device",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/device/{{ _.device_uid }}/updates/{{ _.session_id }}/download",
+      "name": "Download Firmware",
+      "description": "Download firmware chunk",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "chunk",
+          "value": "0",
+          "description": "Chunk number"
+        }
+      ],
+      "headers": [
+        {
+          "name": "X-Device-Auth",
+          "value": "{{ _.device_auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531198000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_complete_update",
+      "parentId": "fld_device",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/device/{{ _.device_uid }}/updates/{{ _.session_id }}/complete",
+      "name": "Complete Update",
+      "description": "Mark update as complete",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"checksum\": \"verified_checksum_here\",\n  \"status\": \"success\",\n  \"boot_time\": \"2024-01-01T12:00:00Z\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Device-Auth",
+          "value": "{{ _.device_auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531197000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_devices",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices",
+      "name": "List Devices",
+      "description": "Get all devices",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "organization_id",
+          "value": "",
+          "description": "Filter by org",
+          "disabled": true
+        },
+        {
+          "name": "status",
+          "value": "active",
+          "description": "Filter by status",
+          "disabled": true
+        },
+        {
+          "name": "limit",
+          "value": "50",
+          "description": "Results limit",
+          "disabled": true
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_device",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices/{{ _.device_id }}",
+      "name": "Get Device",
+      "description": "Get device by ID",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531199000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_register_device",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices",
+      "name": "Register Device",
+      "description": "Register new device",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"device_uid\": \"DEV-NEW-001\",\n  \"organization_id\": \"{{ _.org_id }}\",\n  \"device_type\": \"sensor\",\n  \"firmware_version\": \"1.0.0\",\n  \"hardware_version\": \"rev_a\",\n  \"location\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.0060,\n    \"address\": \"New York, NY\"\n  },\n  \"metadata\": {\n    \"installation_date\": \"2024-01-01\",\n    \"site_name\": \"Main Office\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531198000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_update_device_status",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices/{{ _.device_id }}/status",
+      "name": "Update Device Status",
+      "description": "Update device status",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"active\": true,\n  \"reason\": \"Device maintenance completed\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531197000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_device_telemetry",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices/{{ _.device_id }}/telemetry",
+      "name": "Get Device Telemetry",
+      "description": "Get telemetry for device",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "start_time",
+          "value": "2024-01-01T00:00:00Z",
+          "description": "Start time",
+          "disabled": true
+        },
+        {
+          "name": "end_time",
+          "value": "2024-01-02T00:00:00Z",
+          "description": "End time",
+          "disabled": true
+        },
+        {
+          "name": "limit",
+          "value": "100",
+          "description": "Record limit",
+          "disabled": true
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531196000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_batch_telemetry",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/telemetry/batch",
+      "name": "Batch Telemetry",
+      "description": "Ingest batch telemetry",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"messages\": [\n    {\n      \"device_uid\": \"DEV-001\",\n      \"timestamp\": \"2024-01-01T12:00:00Z\",\n      \"data\": {\n        \"temperature\": 25.5,\n        \"humidity\": 60.2\n      }\n    },\n    {\n      \"device_uid\": \"DEV-002\",\n      \"timestamp\": \"2024-01-01T12:01:00Z\",\n      \"data\": {\n        \"temperature\": 26.1,\n        \"humidity\": 58.9\n      }\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531195000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_organizations",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/organizations",
+      "name": "List Organizations",
+      "description": "Get all organizations",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531194000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_organization",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/organizations",
+      "name": "Create Organization",
+      "description": "Create new organization",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Acme Corporation\",\n  \"description\": \"Sample organization for testing\",\n  \"contact_email\": \"admin@acme.com\",\n  \"settings\": {\n    \"timezone\": \"UTC\",\n    \"max_devices\": 1000\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531193000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_firmware",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/firmware/releases",
+      "name": "List Firmware",
+      "description": "Get firmware releases",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "device_type",
+          "value": "",
+          "description": "Filter by device type",
+          "disabled": true
+        },
+        {
+          "name": "status",
+          "value": "",
+          "description": "Filter by status",
+          "disabled": true
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531192000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_firmware",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/firmware/releases/{{ _.firmware_id }}",
+      "name": "Get Firmware",
+      "description": "Get firmware by ID",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531191000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_system_stats",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/admin/stats",
+      "name": "System Stats",
+      "description": "Get system statistics",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531190000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_token",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/admin/tokens",
+      "name": "Create Token",
+      "description": "Create access token",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"description\": \"API access token for testing\",\n  \"scopes\": [\"devices:read\", \"devices:write\", \"telemetry:read\"],\n  \"expires_in\": 86400\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531189000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_batch_register_devices",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices/batch",
+      "name": "Batch Register Devices",
+      "description": "Register multiple devices at once",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"devices\": [\n    {\n      \"device_uid\": \"DEV-BATCH-001\",\n      \"organization_id\": \"{{ _.org_id }}\",\n      \"device_type\": \"sensor\",\n      \"firmware_version\": \"1.0.0\",\n      \"hardware_version\": \"rev_a\"\n    },\n    {\n      \"device_uid\": \"DEV-BATCH-002\",\n      \"organization_id\": \"{{ _.org_id }}\",\n      \"device_type\": \"gateway\",\n      \"firmware_version\": \"1.0.0\",\n      \"hardware_version\": \"rev_a\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531188000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_initiate_device_update",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/devices/{{ _.device_id }}/update",
+      "name": "Initiate Device Update",
+      "description": "Manually trigger firmware update for device",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"firmware_id\": \"{{ _.firmware_id }}\",\n  \"priority\": \"high\",\n  \"schedule_time\": \"2024-01-01T12:00:00Z\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531187000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_upload_firmware",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/firmware/upload",
+      "name": "Upload Firmware",
+      "description": "Upload firmware file",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "file",
+            "value": "",
+            "description": "Firmware file to upload",
+            "type": "file"
+          },
+          {
+            "name": "device_type",
+            "value": "sensor",
+            "description": "Target device type"
+          },
+          {
+            "name": "version",
+            "value": "1.1.0",
+            "description": "Firmware version"
+          },
+          {
+            "name": "description",
+            "value": "Bug fixes and performance improvements",
+            "description": "Release description"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531186000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_promote_firmware",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/firmware/releases/{{ _.firmware_id }}/promote",
+      "name": "Promote Firmware",
+      "description": "Promote firmware to production",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"status\": \"production\",\n  \"rollout_percentage\": 100,\n  \"notes\": \"Promoting to production after successful staging tests\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531185000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_update_session",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/updates/sessions/{{ _.session_id }}",
+      "name": "Get Update Session",
+      "description": "Get details of update session",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531184000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_update_batch",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/updates/batches",
+      "name": "Create Update Batch",
+      "description": "Create batch firmware update",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Production Update Batch\",\n  \"firmware_id\": \"{{ _.firmware_id }}\",\n  \"device_filter\": {\n    \"organization_id\": \"{{ _.org_id }}\",\n    \"device_type\": \"sensor\",\n    \"firmware_version\": \"1.0.0\"\n  },\n  \"rollout_config\": {\n    \"batch_size\": 10,\n    \"delay_between_batches\": \"1h\",\n    \"max_failures\": 2\n  },\n  \"schedule_time\": \"2024-01-01T02:00:00Z\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531183000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_update_batches",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/updates/batches",
+      "name": "List Update Batches",
+      "description": "Get all update batches",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "status",
+          "value": "",
+          "description": "Filter by batch status",
+          "disabled": true
+        },
+        {
+          "name": "limit",
+          "value": "50",
+          "description": "Results limit",
+          "disabled": true
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531182000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_tokens",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/admin/tokens",
+      "name": "List Tokens",
+      "description": "Get all access tokens",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531181000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_revoke_token",
+      "parentId": "fld_admin",
+      "modified": 1672531200000,
+      "created": 1672531200000,
+      "url": "{{ _.base_url }}/api/v2/admin/tokens/{{ _.token_id }}",
+      "name": "Revoke Token",
+      "description": "Revoke access token",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1672531180000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/backstage/services/device/config"
+	"go.novek.io/device/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

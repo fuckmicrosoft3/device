@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/backstage/services/device/internal/api"
-	"example.com/backstage/services/device/internal/core"
-	"example.com/backstage/services/device/internal/infrastructure"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.novek.io/device/internal/api"
+	"go.novek.io/device/internal/core"
+	"go.novek.io/device/internal/infrastructure"
 )
 
 var serveCmd = &cobra.Command{

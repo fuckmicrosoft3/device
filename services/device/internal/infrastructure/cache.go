@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/backstage/services/device/config"
 	"github.com/go-redis/redis/v8"
+	"go.novek.io/device/config"
 )
 
 // Cache wraps Redis client for caching operations.

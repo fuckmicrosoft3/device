@@ -4,9 +4,9 @@ package cmd
 import (
 	"fmt"
 
-	"example.com/backstage/services/device/internal/core"
-	"example.com/backstage/services/device/internal/infrastructure"
 	"github.com/spf13/cobra"
+	"go.novek.io/device/internal/core"
+	"go.novek.io/device/internal/infrastructure"
 )
 
 // migrateCmd represents the migrate command.

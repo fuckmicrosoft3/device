@@ -1,9 +1,9 @@
 package api
 
 import (
-	"example.com/backstage/services/device/internal/core"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"go.novek.io/device/internal/core"
 )
 
 // SetupRoutes configures all API routes, including new endpoints for full service utilization.

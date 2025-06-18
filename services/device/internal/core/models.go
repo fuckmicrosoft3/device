@@ -201,3 +201,38 @@ func (t *Telemetry) GetID() string {
 func (t *Telemetry) GetTelemetryType() string {
 	return t.TelemetryType
 }
+
+// FirmwareMetadata contains metadata for firmware releases.
+type FirmwareMetadata struct {
+	Filename       string
+	Version        string
+	ReleaseChannel string
+	ReleaseNotes   string
+}
+
+// DeviceRegistrationResult represents the result of a single device registration attempt.
+type DeviceRegistrationResult struct {
+	Device *Device `json:"device,omitempty"`
+	Error  string  `json:"error,omitempty"`
+}
+
+// BatchRegistrationRequest represents a batch device registration request.
+type BatchRegistrationRequest struct {
+	DeviceUID       string `binding:"required"      json:"device_uid"`
+	OrganizationID  uint   `binding:"required"      json:"organization_id"`
+	SerialNumber    string `json:"serial_number"`
+	HardwareVersion string `json:"hardware_version"`
+}
+
+// BatchRegistrationResponse represents the response from batch device registration.
+type BatchRegistrationResponse struct {
+	Successful []DeviceRegistrationResult `json:"successful"`
+	Failed     []DeviceRegistrationResult `json:"failed"`
+}
+
+// CreateUpdateBatchRequest represents a request to create a batch update.
+type CreateUpdateBatchRequest struct {
+	Name       string `binding:"required" json:"name"`
+	FirmwareID uint   `binding:"required" json:"firmware_id"`
+	DeviceIDs  []uint `binding:"required" json:"device_ids"`
+}

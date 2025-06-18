@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"example.com/backstage/services/device/config"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/sirupsen/logrus"
+	"go.novek.io/device/config"
 )
 
 type Messaging struct {

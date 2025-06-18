@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"example.com/backstage/services/device/internal/core"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"go.novek.io/device/internal/core"
 )
 
 // RequestLogger logs HTTP requests.

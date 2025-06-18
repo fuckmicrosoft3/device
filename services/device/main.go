@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"example.com/backstage/services/device/cmd"
+	"go.novek.io/device/cmd"
 )
 
 func main() {

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"example.com/backstage/services/device/internal/core"
 	"github.com/gin-gonic/gin"
+	"go.novek.io/device/internal/core"
 	"gorm.io/gorm"
 )
 

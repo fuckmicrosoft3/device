@@ -4,9 +4,9 @@ package cmd
 import (
 	"os"
 
-	"example.com/backstage/services/device/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.novek.io/device/config"
 )
 
 var (
