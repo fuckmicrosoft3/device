@@ -1310,6 +1310,10 @@ func (s *AuthenticationService) CreateToken(ctx context.Context, description str
 	return accessToken, nil
 }
 
+func (s *AuthenticationService) ListAccessTokens(ctx context.Context) ([]*AccessToken, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *AuthenticationService) RevokeToken(ctx context.Context, token string) error {
 	return s.store.DeleteAccessToken(ctx, token)
 }
