@@ -8,11 +8,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 
-	"example.com/backstage/services/truck/internal/cache"
-	"example.com/backstage/services/truck/internal/messagebus"
-	"example.com/backstage/services/truck/internal/metrics"
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
+	"go.novek.io/truck/internal/cache"
+	"go.novek.io/truck/internal/messagebus"
+	"go.novek.io/truck/internal/metrics"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
 )
 
 // CreateOperationRequest defines the request to create an operation
@@ -115,11 +115,11 @@ func (s *operationService) Create(ctx context.Context, req *CreateOperationReque
 		Base: model.Base{
 			UUID: req.UUID,
 		},
-		DeviceID:           req.DeviceID,
-		TransportDeviceID:  req.TransportDeviceID,
-		Type:               model.OperationType(req.Type),
-		Status:             model.OperationStatus(req.Status),
-		State:              req.State,
+		DeviceID:          req.DeviceID,
+		TransportDeviceID: req.TransportDeviceID,
+		Type:              model.OperationType(req.Type),
+		Status:            model.OperationStatus(req.Status),
+		State:             req.State,
 	}
 
 	// Find the device and transport to get the MCUs
@@ -161,7 +161,7 @@ func (s *operationService) Update(ctx context.Context, operation *model.Operatio
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Update in database
 	operation, err := s.repo.Update(ctx, operation)
 	if err != nil {
@@ -183,10 +183,10 @@ func (s *operationService) Update(ctx context.Context, operation *model.Operatio
 			logrus.WithError(err).Warn("Failed to update active operation in cache")
 		}
 	}
-	
+
 	// Record successful update metrics
 	collector.RecordOperation(metrics.OperationTypeUpdate, time.Since(startTime))
-	
+
 	// Update active operations gauge (if status changed)
 	count, _ := s.countActiveOperations(ctx)
 	collector.SetActiveOperations(count)
@@ -217,7 +217,7 @@ func (s *operationService) FindActiveByDeviceMCU(ctx context.Context, mcu string
 	defer func() {
 		collector.RecordOperation(metrics.OperationTypeCreate, time.Since(startTime))
 	}()
-	
+
 	// Try to get from cache first
 	operation, err := s.cache.GetActiveOperationByDeviceMCU(ctx, mcu)
 	if err == nil {
@@ -248,7 +248,7 @@ func (s *operationService) FindActiveByDeviceMCU(ctx context.Context, mcu string
 		// Log the error but continue
 		logrus.WithError(err).Warn("Failed to cache active operation")
 	}
-	
+
 	// Update active operations gauge
 	count, _ := s.countActiveOperations(ctx)
 	collector.SetActiveOperations(count)
@@ -312,7 +312,7 @@ func (s *operationService) PublishOperationSessionToERP(ctx context.Context, ses
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Make sure we have all the needed information
 	if session.Operation == nil {
 		// Load the operation if not provided
@@ -328,14 +328,14 @@ func (s *operationService) PublishOperationSessionToERP(ctx context.Context, ses
 	err := messagebus.RetryWithBackoff(ctx, func() error {
 		return s.messageBus.PublishMessage(ctx, session, s.erpQueue)
 	}, 3)
-	
+
 	// Record metrics
 	if err != nil {
 		collector.RecordOperation(metrics.OperationTypeFailed, time.Since(startTime))
 	} else {
 		collector.RecordOperation(metrics.OperationTypeComplete, time.Since(startTime))
 	}
-	
+
 	return err
 }
 
@@ -348,7 +348,7 @@ func (s *operationService) countActiveOperations(ctx context.Context) (int, erro
 	if err != nil {
 		return 0, err
 	}
-	
+
 	return len(operations), nil
 }
 
@@ -357,7 +357,7 @@ func (s *operationService) RepublishEvents(ctx context.Context, start, end time.
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Find matching operation sessions
 	sessions, err := s.repo.FindOperationSessionsBy(ctx, filter, &start, &end)
 	if err != nil {
@@ -374,9 +374,9 @@ func (s *operationService) RepublishEvents(ctx context.Context, start, end time.
 			successCount++
 		}
 	}
-	
+
 	// Record metrics
 	collector.RecordOperation(metrics.OperationTypeEventProcessing, time.Since(startTime))
-	
+
 	return len(sessions), nil
 }

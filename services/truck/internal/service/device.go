@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
-	"example.com/backstage/services/truck/internal/cache"
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
+	"go.novek.io/truck/internal/cache"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
 )
 
 // DeviceService defines the interface for device service

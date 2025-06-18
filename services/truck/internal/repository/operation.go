@@ -6,8 +6,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/model"
 )
 
 // OperationRepository defines the interface for operation repository
@@ -145,7 +145,7 @@ func (r *operationRepository) CreateOperationSession(ctx context.Context, sessio
 // FindOperationSessionsBy finds operation sessions by filter and date range
 func (r *operationRepository) FindOperationSessionsBy(ctx context.Context, filter model.OperationSession, start, end *time.Time) ([]*model.OperationSession, error) {
 	var sessions []*model.OperationSession
-	
+
 	query := r.db.WithContext(ctx).
 		Preload("Operation").
 		Preload("OperationGroup").

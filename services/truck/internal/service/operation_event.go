@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
 )
 
 // RecordEventRequest defines the request to record an operation event
@@ -276,9 +276,9 @@ func (s *operationEventService) RecordEvent(ctx context.Context, req *RecordEven
 		Base: model.Base{
 			UUID: uuid.New().String(),
 		},
-		DeviceID:     device.UUID,
-		DeviceType:   device.Type,
-		EventType:    eventType,
+		DeviceID:   device.UUID,
+		DeviceType: device.Type,
+		EventType:  eventType,
 	}
 
 	if operation != nil {

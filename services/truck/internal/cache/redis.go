@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/model"
 )
 
 // CacheClient defines the interface for cache operations
@@ -18,20 +18,20 @@ type CacheClient interface {
 	GetOperation(ctx context.Context, id string) (*model.Operation, error)
 	SetOperation(ctx context.Context, operation *model.Operation) error
 	DeleteOperation(ctx context.Context, id string) error
-	
+
 	// Operation group caching methods
 	GetOperationGroup(ctx context.Context, id string) (*model.OperationGroup, error)
 	SetOperationGroup(ctx context.Context, group *model.OperationGroup) error
 	DeleteOperationGroup(ctx context.Context, id string) error
-	
+
 	// Get active operations by device MCU
 	GetActiveOperationByDeviceMCU(ctx context.Context, mcu string) (*model.Operation, error)
 	SetActiveOperationByDeviceMCU(ctx context.Context, mcu string, operation *model.Operation) error
-	
+
 	// Get active operation groups by transport MCU
 	GetActiveOperationGroupByTransportMCU(ctx context.Context, mcu string) (*model.OperationGroup, error)
 	SetActiveOperationGroupByTransportMCU(ctx context.Context, mcu string, group *model.OperationGroup) error
-	
+
 	// Clear all cache
 	FlushAll(ctx context.Context) error
 }
@@ -58,7 +58,7 @@ func NewRedisClient(cfg *config.RedisConfig) (CacheClient, error) {
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}

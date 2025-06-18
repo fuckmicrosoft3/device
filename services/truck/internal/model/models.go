@@ -209,7 +209,7 @@ func (s OperationStatus) String() string {
 		CompleteOperationStatus:     "completed",
 		ErrorOperationStatus:        "error",
 	}
-	
+
 	if str, ok := statusMap[s]; ok {
 		return str
 	}
@@ -222,7 +222,7 @@ func (t OperationType) String() string {
 		RefillOperationType:      "refill",
 		MaintenanceOperationType: "maintenance",
 	}
-	
+
 	if str, ok := typeMap[t]; ok {
 		return str
 	}
@@ -235,7 +235,7 @@ func (u OperationUnit) String() string {
 		OperationUnitLitres: "litres",
 		OperationUnitGrams:  "grams",
 	}
-	
+
 	if str, ok := unitMap[u]; ok {
 		return str
 	}

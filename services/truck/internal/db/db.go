@@ -8,8 +8,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/model"
 )
 
 // Connect establishes a connection to the database
@@ -54,7 +54,7 @@ func Connect(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(cfg.MaxConn)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdle)
 	sqlDB.SetConnMaxLifetime(cfg.MaxLife)
-	
+
 	// Register hooks for metrics
 	RegisterDurationHooks(db)
 	RegisterMetricsHooks(db)

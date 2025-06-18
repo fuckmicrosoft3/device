@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/internal/model"
 )
 
 // OperationEventRepository defines the interface for operation event repository

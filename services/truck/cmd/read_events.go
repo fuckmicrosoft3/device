@@ -4,15 +4,14 @@ import (
 	"context"
 	"time"
 
-
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/messagebus"
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/messagebus"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
 )
 
 var (
@@ -53,7 +52,7 @@ var readEventsCmd = &cobra.Command{
 		// Process each queue
 		for _, queueName := range cfg.MessageBus.Queues {
 			logrus.Infof("Reading from queue: %s", queueName)
-			
+
 			// Receive messages
 			messages, err := messageBusClient.ReceiveMessages(ctx, queueName, messageCount)
 			if err != nil {

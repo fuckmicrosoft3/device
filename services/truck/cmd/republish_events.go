@@ -7,18 +7,18 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/cache"
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/messagebus"
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
-	"example.com/backstage/services/truck/internal/service"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/cache"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/messagebus"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
+	"go.novek.io/truck/internal/service"
 )
 
 var (
-	startTime     string
-	endTime       string
+	startTime      string
+	endTime        string
 	operationGroup string
 )
 
@@ -107,7 +107,7 @@ var republishEventsCmd = &cobra.Command{
 func init() {
 	// Default to 24 hours ago
 	defaultStart := time.Now().Add(-24 * time.Hour).Format(time.DateTime)
-	
+
 	republishEventsCmd.Flags().StringVarP(&startTime, "start", "s", defaultStart, "Start time for republishing events (format: 2006-01-02T15:04:05)")
 	republishEventsCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time for republishing events (format: 2006-01-02T15:04:05)")
 	republishEventsCmd.Flags().StringVarP(&operationGroup, "group", "g", "", "Operation group ID")

@@ -6,8 +6,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/model"
 )
 
 // OperationGroupRepository defines the interface for operation group repository

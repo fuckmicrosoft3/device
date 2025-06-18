@@ -7,35 +7,35 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"example.com/backstage/services/truck/internal/metrics"
+	"go.novek.io/truck/internal/metrics"
 )
 
 // MetricsHandler handles requests to get metrics
 func MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Get memory stats
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	
+
 	// Update memory gauge
 	collector.SetGauge(metrics.GaugeSystemMemory, float64(memStats.Alloc))
-	
+
 	// Get metrics
 	metricData := collector.GetMetrics()
-	
+
 	// Add runtime info
 	metricData["runtime"] = map[string]interface{}{
 		"goroutines": runtime.NumGoroutine(),
 		"memory": map[string]interface{}{
-			"alloc_bytes": memStats.Alloc,
+			"alloc_bytes":       memStats.Alloc,
 			"total_alloc_bytes": memStats.TotalAlloc,
-			"sys_bytes": memStats.Sys,
-			"heap_objects": memStats.HeapObjects,
-			"gc_cycles": memStats.NumGC,
+			"sys_bytes":         memStats.Sys,
+			"heap_objects":      memStats.HeapObjects,
+			"gc_cycles":         memStats.NumGC,
 		},
 	}
-	
+
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(metricData); err != nil {
@@ -48,7 +48,7 @@ func MetricsHandler(w http.ResponseWriter, r *http.Request) {
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	collector := metrics.GetMetricsCollector()
 	health := collector.GetHealthStatus()
-	
+
 	// Determine HTTP status code based on health
 	statusCode := http.StatusOK
 	if healthStatus, ok := health["status"].(map[string]interface{}); ok {
@@ -56,7 +56,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusServiceUnavailable
 		}
 	}
-	
+
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)

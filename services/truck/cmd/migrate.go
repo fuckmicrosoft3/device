@@ -4,8 +4,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/db"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/db"
 )
 
 var migrateCmd = &cobra.Command{

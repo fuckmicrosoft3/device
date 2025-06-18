@@ -2,34 +2,34 @@ package db
 
 import (
 	"time"
-	
+
 	"gorm.io/gorm"
-	
-	"example.com/backstage/services/truck/internal/metrics"
+
+	"go.novek.io/truck/internal/metrics"
 )
 
 // RegisterMetricsHooks registers GORM hooks for database metrics
 func RegisterMetricsHooks(db *gorm.DB) {
 	// Add a callback after database operations to collect metrics
-	
+
 	// For creates
 	db.Callback().Create().After("gorm:create").Register("metrics:create", func(db *gorm.DB) {
 		collector := metrics.GetMetricsCollector()
 		collector.RecordDatabaseQuery(metrics.DBQueryTypeInsert, db.Error == nil, getDuration(db))
 	})
-	
+
 	// For queries
 	db.Callback().Query().After("gorm:query").Register("metrics:query", func(db *gorm.DB) {
 		collector := metrics.GetMetricsCollector()
 		collector.RecordDatabaseQuery(metrics.DBQueryTypeSelect, db.Error == nil, getDuration(db))
 	})
-	
+
 	// For updates
 	db.Callback().Update().After("gorm:update").Register("metrics:update", func(db *gorm.DB) {
 		collector := metrics.GetMetricsCollector()
 		collector.RecordDatabaseQuery(metrics.DBQueryTypeUpdate, db.Error == nil, getDuration(db))
 	})
-	
+
 	// For deletes
 	db.Callback().Delete().After("gorm:delete").Register("metrics:delete", func(db *gorm.DB) {
 		collector := metrics.GetMetricsCollector()

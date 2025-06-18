@@ -12,13 +12,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/api"
-	"example.com/backstage/services/truck/internal/cache"
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/messagebus"
-	"example.com/backstage/services/truck/internal/repository"
-	"example.com/backstage/services/truck/internal/service"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/api"
+	"go.novek.io/truck/internal/cache"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/messagebus"
+	"go.novek.io/truck/internal/repository"
+	"go.novek.io/truck/internal/service"
 )
 
 var serveCmd = &cobra.Command{
@@ -109,7 +109,7 @@ var serveCmd = &cobra.Command{
 
 		// Create router
 		router := mux.NewRouter()
-		
+
 		// Apply middleware
 		router.Use(middleware.Logger)
 		router.Use(middleware.Recover)

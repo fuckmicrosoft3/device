@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
-	"example.com/backstage/services/truck/internal/cache"
-	"example.com/backstage/services/truck/internal/model"
-	"example.com/backstage/services/truck/internal/repository"
+	"go.novek.io/truck/internal/cache"
+	"go.novek.io/truck/internal/model"
+	"go.novek.io/truck/internal/repository"
 )
 
 // CreateOperationGroupRequest defines the request to create an operation group
@@ -30,9 +30,9 @@ type OperationGroupService interface {
 
 // operationGroupService implements OperationGroupService
 type operationGroupService struct {
-	repo        repository.OperationGroupRepository
-	deviceRepo  repository.DeviceRepository
-	cache       cache.CacheClient
+	repo       repository.OperationGroupRepository
+	deviceRepo repository.DeviceRepository
+	cache      cache.CacheClient
 }
 
 // NewOperationGroupService creates a new operation group service
@@ -42,9 +42,9 @@ func NewOperationGroupService(
 	cache cache.CacheClient,
 ) OperationGroupService {
 	return &operationGroupService{
-		repo:        repo,
-		deviceRepo:  deviceRepo,
-		cache:       cache,
+		repo:       repo,
+		deviceRepo: deviceRepo,
+		cache:      cache,
 	}
 }
 

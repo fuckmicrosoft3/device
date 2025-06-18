@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"example.com/backstage/services/truck/internal/db"
-	"example.com/backstage/services/truck/internal/model"
+	"go.novek.io/truck/internal/db"
+	"go.novek.io/truck/internal/model"
 )
 
 // DeviceRepository defines the interface for device repository
@@ -94,6 +94,6 @@ func (r *deviceRepository) FindOrCreateTransportByMCU(ctx context.Context, mcu s
 func (r *deviceRepository) Create(ctx context.Context, device *model.Device) error {
 	// Normalize MCU to prevent duplicates with different casing
 	device.MCU = strings.ToUpper(device.MCU)
-	
+
 	return r.db.WithContext(ctx).Create(device).Error
 }

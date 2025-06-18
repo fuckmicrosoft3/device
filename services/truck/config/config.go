@@ -83,7 +83,7 @@ func Load() (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
-	
+
 	// Override with environment variables
 	v.SetEnvPrefix("OPS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

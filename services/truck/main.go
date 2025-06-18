@@ -1,7 +1,7 @@
 package main
 
 import (
-	"example.com/backstage/services/truck/cmd"
+	"go.novek.io/truck/cmd"
 )
 
 func main() {

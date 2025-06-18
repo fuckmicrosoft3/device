@@ -12,7 +12,7 @@ var (
 	// Flags
 	cfgFile string
 	debug   bool
-	
+
 	// Root command
 	rootCmd = &cobra.Command{
 		Use:   "operations-service",
@@ -41,7 +41,7 @@ func init() {
 	// Persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
-	
+
 	// Add commands
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(migrateCmd)
@@ -57,7 +57,7 @@ func initConfig() {
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
 	}
-	
+
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})

@@ -9,8 +9,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 
-	"example.com/backstage/services/truck/config"
-	"example.com/backstage/services/truck/internal/metrics"
+	"go.novek.io/truck/config"
+	"go.novek.io/truck/internal/metrics"
 )
 
 // Client defines the interface for message bus operations
@@ -30,7 +30,7 @@ type Message interface {
 
 // AzureServiceBusClient implements Client using Azure Service Bus
 type AzureServiceBusClient struct {
-	client          *azservicebus.Client
+	client           *azservicebus.Client
 	connectionString string
 	prefix           string
 }
@@ -70,7 +70,7 @@ func (c *AzureServiceBusClient) PublishMessage(ctx context.Context, message inte
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Get the sender for the queue
 	sender, err := c.client.NewSender(c.getQueueName(queueName), nil)
 	if err != nil {
@@ -107,7 +107,7 @@ func (c *AzureServiceBusClient) ReceiveMessages(ctx context.Context, queueName s
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	// Get the receiver for the queue
 	receiver, err := c.client.NewReceiverForQueue(
 		c.getQueueName(queueName),
@@ -148,7 +148,7 @@ func (c *AzureServiceBusClient) ReceiveMessages(ctx context.Context, queueName s
 	// Record number of messages received
 	collector.RecordMessageBusOperation(metrics.MessageBusOperationReceive, true, time.Since(startTime))
 	collector.SetPendingMessages(len(messages))
-	
+
 	return messages, nil
 }
 
@@ -194,7 +194,7 @@ func (m *serviceBusMessage) Complete(ctx context.Context) error {
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	if err := m.receiver.CompleteMessage(ctx, m.message, nil); err != nil {
 		collector.RecordMessageBusOperation(metrics.MessageBusOperationComplete, false, time.Since(startTime))
 		return fmt.Errorf("failed to complete message: %w", err)
@@ -209,7 +209,7 @@ func (m *serviceBusMessage) Reject(ctx context.Context) error {
 	// Record metrics
 	startTime := time.Now()
 	collector := metrics.GetMetricsCollector()
-	
+
 	if err := m.receiver.AbandonMessage(ctx, m.message, nil); err != nil {
 		collector.RecordMessageBusOperation(metrics.MessageBusOperationReject, false, time.Since(startTime))
 		return fmt.Errorf("failed to abandon message: %w", err)
@@ -224,32 +224,32 @@ func IsDisconnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errMsg := err.Error()
-	return strings.Contains(errMsg, "amqp: link detached") || 
-	       strings.Contains(errMsg, "awaiting send: context deadline exceeded")
+	return strings.Contains(errMsg, "amqp: link detached") ||
+		strings.Contains(errMsg, "awaiting send: context deadline exceeded")
 }
 
 // RetryWithBackoff retries an operation with exponential backoff
 func RetryWithBackoff(ctx context.Context, fn func() error, maxRetries int) error {
 	var err error
-	
+
 	for retry := 0; retry < maxRetries; retry++ {
 		err = fn()
 		if err == nil {
 			return nil
 		}
-		
+
 		if !IsDisconnectionError(err) {
 			return err
 		}
-		
+
 		// Calculate backoff duration
 		backoff := time.Duration(1<<uint(retry)) * time.Second
 		if backoff > 30*time.Second {
 			backoff = 30 * time.Second
 		}
-		
+
 		// Wait for backoff duration or context cancellation
 		select {
 		case <-time.After(backoff):
@@ -258,6 +258,6 @@ func RetryWithBackoff(ctx context.Context, fn func() error, maxRetries int) erro
 			return ctx.Err()
 		}
 	}
-	
+
 	return err
 }
