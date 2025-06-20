@@ -1,0 +1,50 @@
+# Sales Service Configuration
+service:
+  name: "sales-service"
+  environment: "development"
+  
+server:
+  http:
+    address: ":8080"
+    read_timeout: "30s"
+    write_timeout: "30s"
+  
+database:
+  sales:
+    dsn: "postgres://user:password@localhost:5432/sales_db?sslmode=disable"
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: "5m"
+  erp:
+    dsn: "postgres://readonly:password@localhost:5432/erp_db?sslmode=disable"
+    max_open_conns: 10
+    max_idle_conns: 2
+    conn_max_lifetime: "5m"
+
+azure:
+  service_bus:
+    connection_string: ""
+    queue_name: "sales-queue"
+    max_concurrent_messages: 10
+    
+elasticsearch:
+  addresses:
+    - "http://localhost:9200"
+  username: ""
+  password: ""
+  index_prefix: "sales"
+  
+enrichment:
+  timeout: "5s"
+  retry_interval: "1m"
+  max_retries: 3
+  
+monitoring:
+  new_relic:
+    enabled: false
+    app_name: "sales-service"
+    license_key: ""
+    
+logging:
+  level: "info"
+  format: "json" # json or console
